@@ -76,9 +76,14 @@ def compress_image(filepath: Path, quality: int, overwrite: bool, keep_exif: boo
             # PNG 不支援 quality，使用 optimize
             pass
 
+        # 判斷輸出格式
+        ext = filepath.suffix.lower()
+        format_map = {'.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.webp': 'WEBP', '.bmp': 'BMP'}
+        output_format = format_map.get(ext, 'JPEG')
+        
         # 先存到暫存路徑檢查大小
         temp_path = new_path.with_suffix('.tmp')
-        img.save(temp_path, **save_kwargs)
+        img.save(temp_path, format=output_format, **save_kwargs)
         new_size = temp_path.stat().st_size
         
         # 檢查是否壓縮後反而變大
