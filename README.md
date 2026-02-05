@@ -28,9 +28,6 @@ uv sync
 ```bash
 # 使用 uv 執行的腳本別名
 uv run compress-img "D:\Photos"
-
-# 或者直接執行 main.py
-uv run python main.py "D:\Photos"
 ```
 
 ## 使用方式
@@ -62,7 +59,6 @@ uv run compress-img
 
 ## 專案結構
 - `compress_images.py`: 核心壓縮邏輯
-- `main.py`: 程式入口
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
 - `uv.lock`: 依賴鎖定檔
 
