@@ -1,6 +1,6 @@
 # 圖片批量壓縮工具
 
-遍歷目錄及所有子目錄，將圖片壓縮後另存新檔。
+遍歷目錄及所有子目錄，將圖片壓縮後另存新檔。已改用 `uv` 進行環境與依賴管理。
 
 ## 功能
 
@@ -11,22 +11,33 @@
 - ✅ 智能判斷：壓縮後變大則自動跳過
 - ✅ 支援格式：JPG、JPEG、PNG、WebP、BMP
 
-## 安裝
+## 安裝與執行
 
+本專案使用 [uv](https://github.com/astral-sh/uv) 進行管理。
+
+### 1. 安裝 uv
+若尚未安裝 uv，請參考 [官方文件](https://docs.astral.sh/uv/getting-started/installation/)。
+
+### 2. 初始化環境
 ```bash
-pip install Pillow
+uv sync
+```
+
+### 3. 執行程式
+你可以使用以下指令執行：
+```bash
+# 使用 uv 執行的腳本別名
+uv run compress-img "D:\Photos"
+
+# 或者直接執行 main.py
+uv run python main.py "D:\Photos"
 ```
 
 ## 使用方式
 
-### 基本用法
-```bash
-python compress_images.py "D:\Photos"
-```
-
 ### 完整參數
 ```bash
-python compress_images.py <目錄路徑> [選項]
+uv run compress-img <目錄路徑> [選項]
 ```
 
 | 參數 | 說明 | 預設值 |
@@ -40,33 +51,20 @@ python compress_images.py <目錄路徑> [選項]
 
 ```bash
 # 50% 品質，8 執行緒並行處理
-python compress_images.py "D:\Photos" -q 50 -w 8
+uv run compress-img "D:\Photos" -q 50 -w 8
 
 # 80% 品質，保留 EXIF，覆蓋舊檔
-python compress_images.py "D:\Photos" -q 80 --keep-exif --overwrite
+uv run compress-img "D:\Photos" -q 80 --keep-exif --overwrite
 
 # 互動模式 (會提示輸入目錄)
-python compress_images.py
+uv run compress-img
 ```
 
-## 輸出範例
-
-```
-圖片壓縮工具 v2.0
-目標目錄: D:\Photos
-壓縮品質: 70%
-============================================================
-找到 15 張圖片，開始處理...
-[1/15] ✓ photo1.jpg -> photo1_70%.jpg (2048.0KB -> 512.3KB, -75.0%)
-[2/15] ✓ photo2.jpg -> photo2_70%.jpg (1024.0KB -> 320.5KB, -68.7%)
-[3/15] 壓縮後變大，跳過: small.jpg (15.2KB -> 18.1KB)
-============================================================
-處理完成!
-  成功壓縮: 12
-  跳過(已存在/已壓縮): 1
-  跳過(壓縮後變大): 2
-  失敗: 0
-```
+## 專案結構
+- `compress_images.py`: 核心壓縮邏輯
+- `main.py`: 程式入口
+- `pyproject.toml`: 專案設定與依賴管理 (uv)
+- `uv.lock`: 依賴鎖定檔
 
 ## License
 
