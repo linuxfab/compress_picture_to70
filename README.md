@@ -99,7 +99,7 @@ uv run images-to-webp
 ### 輸出範例
 
 ```
-圖片壓縮工具 v2.1
+圖片壓縮工具 v3.0
 目標目錄: D:\Photos
 壓縮品質: 70%
 ============================================================
@@ -120,10 +120,33 @@ uv run images-to-webp
 ```
 
 ## 專案結構
-- `compress_images.py`: 核心壓縮邏輯
+- `utils.py`: 共用模組 (FileResult、並行管線、統計彙整、CLI 共用元件)
+- `compress_images.py`: 圖片壓縮邏輯
 - `images_to_webp.py`: WebP 轉檔與目錄鏡像邏輯
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
 - `uv.lock`: 依賴鎖定檔
+
+## 架構設計
+
+```
+utils.py
+├── FileResult (dataclass)     — 單檔處理結果，取代全域 mutable state
+├── ProcessingSummary           — 批次統計摘要
+├── collect_files()             — 遞迴收集圖片檔案
+├── run_pipeline()              — 並行處理管線 (ThreadPoolExecutor)
+├── print_summary()             — 結果/空間統計輸出
+├── create_base_parser()        — 共用 argparse 建構
+├── resolve_directory()         — 目錄解析 (含互動模式)
+└── validate_quality()          — 品質參數驗證
+
+compress_images.py
+├── compress_image()            — 單張壓縮 Worker (回傳 FileResult)
+└── main()                      — CLI 入口 (partial 綁定 → run_pipeline)
+
+images_to_webp.py
+├── convert_to_webp()           — 單張轉檔 Worker (回傳 FileResult)
+└── main()                      — CLI 入口 (partial 綁定 → run_pipeline)
+```
 
 ## License
 

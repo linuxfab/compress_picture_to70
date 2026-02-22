@@ -1,5 +1,15 @@
 # Agent Logs
 
+- 2026-02-22 21:47
+  - 重點: 架構重構 — 抽共用模組 `utils.py`、消滅全域 mutable state
+  - 影響:
+    - 新增 `utils.py`: 包含 `FileResult` dataclass、`ProcessingSummary`、`run_pipeline()` 並行管線、`collect_files()`、`print_summary()`、`create_base_parser()`、`resolve_directory()`、`validate_quality()` 等共用邏輯
+    - 重構 `compress_images.py`: 移除全域 `stats`/`stats_lock`，`compress_image()` 改回傳 `FileResult`，使用 `functools.partial` 綁定參數後交由 `run_pipeline()` 執行。版本升至 v3.0
+    - 重構 `images_to_webp.py`: 同上重構模式，版本升至 v2.0
+    - 更新 `README.md`: 新增架構設計圖、更新專案結構說明
+  - 結果: 兩個工具不再有任何全域 mutable state (stats, stats_lock)，消除 thread-safety 隱患。重複邏輯 (argparse setup, stats counting, directory walking, print summary) 全部集中到 `utils.py`，各工具檔只保留業務邏輯 (compress_image / convert_to_webp) 和 CLI 入口。
+  - 更新者: Antigravity Agent
+
 - 2026-02-22 21:42
   - 重點: 修復 bug、移除冗餘 import、新增 dry-run 模式與空間節省統計
   - 影響:
