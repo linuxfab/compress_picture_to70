@@ -1,5 +1,13 @@
 # Agent Logs
 
+- 2026-02-22 23:05
+  - 重點: 實裝 `pillow-heif` 支援 Apple 高效圖檔及 `min-size` / `max-size` 智慧檔案過濾
+  - 影響:
+    - `pyproject.toml` 加入了 `pillow-heif` 依賴以支援讀取 `.heic` / `.avif`。
+    - `utils.py` 新增 `parse_size_to_bytes` 模組，並將參數 `--min-size` 與 `--max-size` 掛載於 argparse。藉由判斷檔案實際大小精準略過過小或過大的圖檔，極大化 CPU 算力投報率。
+    - `compress_images.py` 與 `images_to_webp.py` 新增 .heic / .avif 的註冊以及轉換識別。若壓縮器遇見這兩種特規格式會自動將其轉存為標準的 JPEG (或 WebP)。
+  - 結果: 大幅拓寬工具的實用範圍，能一鍵處理來自 iPhone 備份的圖庫。大小過濾則能省下無謂的算力，免於處理幾 KB 的網頁圖示。
+  - 更新者: Antigravity Agent
 - 2026-02-22 22:15
   - 重點: TUI 終端視覺化、安全避開隱藏目錄、不落地 `--out-dir` 參數導入
   - 影響:

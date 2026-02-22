@@ -10,27 +10,27 @@
 - ✅ 保留 EXIF 資訊 (GPS、拍攝時間等)
 - ✅ 覆蓋/跳過已存在檔案
 - ✅ 智能判斷：壓縮後變大則自動跳過
-- ✅ 支援格式：JPG、JPEG、PNG、WebP、BMP（BMP 會自動跳過因無壓縮效果）
+- ✅ 支援格式：JPG、JPEG、PNG、WebP、BMP、**全新支援 `HEIC` / `AVIF`**（BMP 會自動跳過）
 - ✅ Dry-run 預覽模式
 - ✅ 總空間節省統計 (原始大小 / 壓縮後大小 / 節省百分比)
 - ✅ 支援深度控制 (--max-depth)
+- ✅ **全新: 針對檔案大小進行智慧過濾 (`--min-size`、`--max-size`)**
 - ✅ ProcessPoolExecutor 多行程充分利用多核 CPU
-- ✅ **全新: Rich 終端機視覺化 (動態進度條、精美報表)**
-- ✅ **全新: 自訂遠端輸出目錄 `--out-dir` 不落地污染資料夾**
+- ✅ 全新: Rich 終端機視覺化 (動態進度條、精美報表)
+- ✅ 全新: 自訂遠端輸出目錄 `--out-dir` 不落地污染資料夾
 - ✅ 自動略過隱藏目錄 (`.git`, `.venv` 等)
 
 **images-to-webp (WebP 轉檔)**
-- ✅ 將 JPG/PNG/BMP 轉換為 WebP 格式
-- ✅ **保持原始目錄結構**：轉檔後存於 `webpimage` 資料夾中，子目錄結構與來源相同
+- ✅ 將 JPG/PNG/BMP 等格式（**包含 Apple 的 .HEIC**）無縫轉換為 WebP 格式
+- ✅ **保持原始目錄結構**：轉檔後存於 `webpimage` 資料夾或自訂 `--out-dir`，子目錄結構不變
 - ✅ 自訂 WebP 壓縮品質或無損壓縮 (--lossless)
 - ✅ 保留 EXIF 資訊 (--keep-exif)
 - ✅ 並行處理加速 (ProcessPoolExecutor)
 - ✅ 支援覆蓋已存在檔案
 - ✅ Dry-run 預覽模式
 - ✅ 總空間節省統計
-- ✅ 支援深度控制 (--max-depth)
-- ✅ **全新: Rich 終端機視覺化 (動態進度條、精美報表)**
-- ✅ **全新: 支援 `--out-dir`**
+- ✅ 支援 **深度控制 (--max-depth)** 以及 **智慧大小過濾 (--min-size, --max-size)**
+- ✅ 全新: Rich 終端機視覺化 (動態進度條、精美報表)
 - ✅ 自動略過隱藏目錄
 
 ## 安裝與執行
@@ -69,6 +69,8 @@ uv run compress-img <目錄路徑> [選項]
 |------|------|--------|
 | `-O, --out-dir` | 自訂輸出目錄 (留空則在原地建立) | (無) |
 | `-q, --quality` | 壓縮品質 1-100 | 70 |
+| `--min-size` | 最小檔案過濾 (低於此大小將跳過，如 500KB, 1MB) | (無) |
+| `--max-size` | 最大檔案過濾 (高於此大小將跳過) | (無) |
 | `-o, --overwrite` | 覆蓋已存在的壓縮檔 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
 | `-w, --workers` | Process 數量 (並行) | 4 |
@@ -85,6 +87,8 @@ uv run images-to-webp <目錄路徑> [選項]
 |------|------|--------|
 | `-O, --out-dir` | 自訂輸出目錄 (留空則建立 webpimage 夾) | (無) |
 | `-q, --quality` | WebP 壓縮品質 1-100 | 80 |
+| `--min-size` | 最小檔案過濾 (低於此大小將跳過，如 500KB) | (無) |
+| `--max-size` | 最大檔案過濾 | (無) |
 | `-o, --overwrite` | 覆蓋已存在的 WebP 檔案 | 否 |
 | `-l, --lossless` | 使用無損壓縮 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
@@ -98,8 +102,11 @@ uv run images-to-webp <目錄路徑> [選項]
 # [壓縮] 不落地：將 D:\Photos 目錄的結構跟檔案，壓縮存出至 E:\Backup，且品質 50%
 uv run compress-img "D:\Photos" -O "E:\Backup" -q 50
 
-# [壓縮] 預覽模式，不實際壓縮
-uv run compress-img "D:\Photos" --dry-run
+# [過濾壓縮] 針對硬碟上 "大於 1MB 且小於 50MB" 的圖去執行減肥
+uv run compress-img "D:\Photos" --min-size 1MB --max-size 50MB
+
+# [過濾轉檔] 挑出資料夾中 500KB 以上的圖與 .HEIC 手機照片，跨碟鏡像為 WebP 無損壓縮
+uv run images-to-webp "D:\Photos" -O "F:\WebP_Exports" --min-size 500KB --lossless --keep-exif
 
 # [轉檔] 將 D:\Photos 下所有圖片轉為 WebP，存入 D:\Photos\webpimage，無損壓縮並保留 EXIF
 uv run images-to-webp "D:\Photos" --lossless --keep-exif

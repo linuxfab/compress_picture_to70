@@ -1,10 +1,11 @@
 """
 圖片處理工具 - 共用模組
 
-整合了 Rich UI 視覺化（進度條、匯總表格）、隱藏目錄過濾、以及自訂輸出路徑等功能。
+整合了 Rich UI 視覺化、進度條、匯總表格、隱藏目錄過濾、檔案大小過濾及自訂輸出功能。
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -66,17 +67,46 @@ def format_size(size_bytes: int) -> str:
     else:
         return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
 
+def parse_size_to_bytes(size_str: str | None) -> int | None:
+    """
+    將人類可讀大小（如 '500KB', '2MB', '1.5GB'）轉為 bytes 數字
+    若無單位預設視為 KB，如果沒傳入則回傳 None
+    """
+    if not size_str:
+        return None
+        
+    match = re.match(r'^([\d\.]+)\s*([a-zA-Z]*)$', size_str.strip())
+    if not match:
+        console.print(f"[bold red]解析檔案大小參數錯誤: {size_str}，請使用如 500KB, 2MB 等格式[/bold red]")
+        exit(1)
+        
+    number = float(match.group(1))
+    unit = match.group(2).upper()
+    
+    if unit in ('', 'K', 'KB'):
+        return int(number * 1024)
+    elif unit in ('M', 'MB'):
+        return int(number * 1024 * 1024)
+    elif unit in ('G', 'GB'):
+        return int(number * 1024 * 1024 * 1024)
+    elif unit in ('B', 'BYTE', 'BYTES'):
+        return int(number)
+    else:
+        console.print(f"[bold red]未知的單位: {unit}[/bold red]")
+        exit(1)
+
 
 def collect_files(
     directory: Path,
     supported_formats: set[str],
     exclude_dirs: set[str] | None = None,
     max_depth: int | None = None,
+    min_size_bytes: int | None = None,
+    max_size_bytes: int | None = None,
 ) -> list[Path]:
-    """收集目錄及子目錄中所有符合格式的檔案，並自動濾除系統隱藏及專案相關目錄"""
+    """收集目錄及子目錄中所有符合格式及大小的檔案，並自動濾除系統隱藏及專案目錄"""
     files = []
     
-    # 使用者如果未傳入要避開的目錄，我們給空 set
     if exclude_dirs is None:
         exclude_dirs = set()
     
@@ -96,7 +126,7 @@ def collect_files(
             if max_depth is not None and depth > max_depth:
                 continue
                 
-            # 過濾隱藏與專案內部目錄 (例 .venv, .git, __pycache__, 或外部傳入的 webpimage 等)
+            # 過濾隱藏與專案內部目錄
             if any(is_ignored(part) for part in rel.parts):
                 continue
                 
@@ -106,7 +136,19 @@ def collect_files(
         if f.suffix.lower() not in supported_formats:
             continue
             
+        # 大小過濾
+        try:
+            file_size = f.stat().st_size
+            if min_size_bytes is not None and file_size < min_size_bytes:
+                continue
+            if max_size_bytes is not None and file_size > max_size_bytes:
+                continue
+        except Exception:
+            # 檔案讀取失敗的就放生
+            continue
+            
         files.append(f)
+        
     return files
 
 
@@ -153,7 +195,7 @@ def run_pipeline(
                 # 如果失敗，將紅色的 Alert 印在進度條上方而不破壞版面
                 if result.status == 'failed':
                     progress.console.print(f"[bold red]{result.message}[/bold red]")
-                # 為了避免洗版，成功的訊息不再像以往一樣印出 (除 dry_run 會跳出)
+                # DRY RUN 模式要把每條紀錄印出來
                 elif result.status == 'dry_run':
                     progress.console.print(f"[dim]{result.message}[/dim]")
 
@@ -178,14 +220,12 @@ def run_pipeline(
 def print_summary(
     summary: ProcessingSummary,
     success_label: str = "成功處理",
-    skip_label: str = "跳過(已存在/隱藏)",
+    skip_label: str = "跳過(已存在/隱藏/大小不符)",
     after_label: str = "處理後",
 ) -> None:
     """使用 Rich Table 印出華麗且易讀的分析報告"""
     
-    # =================
     # 執行結果狀態表格
-    # =================
     status_table = Table(title="\n📊 執行結果分析", box=box.ROUNDED, show_header=True, header_style="bold magenta")
     status_table.add_column("狀態", style="dim", width=25)
     status_table.add_column("數量", justify="right", style="bold cyan")
@@ -200,9 +240,7 @@ def print_summary(
     
     console.print(status_table)
 
-    # =================
     # 儲存空間統計表格
-    # =================
     if summary.total_original > 0:
         saved = summary.total_original - summary.total_new
         pct = (saved / summary.total_original) * 100
@@ -222,7 +260,7 @@ def print_summary(
 
 
 def create_base_parser(description: str, epilog: str) -> argparse.ArgumentParser:
-    """建立含共用參數的 ArgumentParser，已內建 out-dir 支援"""
+    """建立含共用參數的 ArgumentParser，已內建 out-dir 及大小過濾支援"""
     parser = argparse.ArgumentParser(
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -237,6 +275,10 @@ def create_base_parser(description: str, epilog: str) -> argparse.ArgumentParser
                         help='預覽模式：僅列出待處理檔案，不實際處理')
     parser.add_argument('-d', '--max-depth', type=int, default=None,
                         help='最大遞迴深度 (0=不進入子目錄, 未指定=無限)')
+    parser.add_argument('--min-size', type=str, default=None,
+                        help='最小檔案限制 (低於此大小將被跳過)，範例: 500KB, 2MB')
+    parser.add_argument('--max-size', type=str, default=None,
+                        help='最大檔案限制 (高於此大小將被跳過)，範例: 10MB')
     return parser
 
 
