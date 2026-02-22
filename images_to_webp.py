@@ -1,17 +1,7 @@
 """
-圖片轉 WebP 工具 v3.0
-遍歷指定目錄及子目錄，將圖片轉換為 WebP 格式並保留目錄結構存於 webpimage 資料夾
-
-功能:
-- 自動轉換 JPG/PNG/BMP 為 WebP
-- 保持原始目錄結構，輸出至 webpimage 目錄
-- 自訂壓縮品質 (--quality) 或無損壓縮 (--lossless)
-- 保留 EXIF 資訊 (--keep-exif)
-- 並行處理加速 (Process pool)
-- 覆蓋/跳過已存在檔案 (--overwrite)
-- Dry-run 模式預覽
-- 總空間節省統計
-- 支援深度控制 (--max-depth)
+圖片轉 WebP 工具 v4.0
+遍歷指定目錄及子目錄，將圖片轉換為 WebP 格式並保留目錄結構。
+可自由指定 `--out-dir`，否則預設會在來源目錄建立 `webpimage`。
 """
 
 from pathlib import Path
@@ -21,14 +11,12 @@ from PIL import Image
 from utils import (
     FileResult, collect_files, run_pipeline, print_summary,
     create_base_parser, resolve_directory, validate_quality,
-    setup_logger, logger
+    setup_logger, console
 )
+from rich.panel import Panel
 
 # 支援的輸入圖片格式
 SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.bmp'}
-
-# 輸出目錄名稱
-TARGET_DIR_NAME = 'webpimage'
 
 
 def get_exif(image: Image.Image) -> bytes | None:
@@ -40,18 +28,17 @@ def get_exif(image: Image.Image) -> bytes | None:
 
 
 def convert_to_webp(
-    filepath: Path, root_dir: Path, quality: int, overwrite: bool, 
-    dry_run: bool, lossless: bool, keep_exif: bool
+    filepath: Path, root_dir: Path, target_root: Path, quality: int, 
+    overwrite: bool, dry_run: bool, lossless: bool, keep_exif: bool
 ) -> FileResult:
     """將單張圖片轉換為 WebP 並另存新檔"""
     try:
-        # 計算相對路徑
+        # 計算相對路徑複製樹狀結構
         try:
             rel_path = filepath.relative_to(root_dir)
         except ValueError:
             rel_path = Path(filepath.name)
 
-        target_root = root_dir / TARGET_DIR_NAME
         target_path = target_root / rel_path.with_suffix('.webp')
 
         # 檢查檔案是否已存在
@@ -64,8 +51,7 @@ def convert_to_webp(
         if dry_run:
             return FileResult(
                 'dry_run',
-                f"[預覽] {filepath.name} -> {rel_path.with_suffix('.webp')} "
-                f"({original_size / 1024:.1f}KB)",
+                f"預計建立: {target_path.name} ({original_size / 1024:.1f}KB)",
             )
 
         # 確保目標目錄存在
@@ -89,19 +75,14 @@ def convert_to_webp(
         img.save(target_path, **save_kwargs)
         new_size = target_path.stat().st_size
 
-        reduction = 0
-        if original_size > 0:
-            reduction = (1 - new_size / original_size) * 100
-
         return FileResult(
             'success',
-            f"✓ {filepath.name} -> {target_path.name} "
-            f"({original_size / 1024:.1f}KB -> {new_size / 1024:.1f}KB, -{reduction:.1f}%)",
+            "已隱藏洗版 Log", # rich進度條自行處理即可
             original_size, new_size,
         )
 
     except Exception as e:
-        return FileResult('failed', f"✗ 處理失敗 {filepath}: {e}")
+        return FileResult('failed', f"檔案 {filepath.name} 解析失敗: {e}")
 
 
 def main():
@@ -113,10 +94,11 @@ def main():
 範例:
   python images_to_webp.py "D:\\Photos" --quality 75
   python images_to_webp.py "D:\\Photos" --lossless --keep-exif
-  python images_to_webp.py "D:\\Photos" -q 80 --overwrite -d 1
-  python images_to_webp.py "D:\\Photos" --dry-run
+  # 指定另外的硬碟輸出 (預設是在原對象旁建立 webpimage 資料夾)
+  python images_to_webp.py "D:\\Photos" -O "F:\\Backup_Webp" -q 80 --overwrite
         '''
     )
+    # 增加 WebP 專屬選項
     parser.add_argument('-q', '--quality', type=int, default=80,
                         help='WebP 壓縮品質 1-100 (預設: 80)')
     parser.add_argument('-o', '--overwrite', action='store_true',
@@ -136,26 +118,28 @@ def main():
 
     root_path = Path(directory)
     if not root_path.exists():
-        logger.error(f"目錄不存在: {directory}")
+        console.print(f"[bold red]❌ 目錄不存在: {directory}[/bold red]")
         return
+        
+    # 如果使用者未輸入 -O, --out-dir 則預設沿用之前的 webpimage 慣例
+    out_dir_path = Path(args.out_dir) if args.out_dir else root_path / "webpimage"
 
-    logger.info(f"\n圖片轉 WebP 工具 v3.0")
-    logger.info(f"目標目錄: {directory}")
-    logger.info(f"WebP 模式: {'Lossless (無損)' if args.lossless else f'Lossy (品質: {args.quality}%)'}")
-    logger.info(f"覆蓋模式: {'是' if args.overwrite else '否'}")
-    logger.info(f"保留EXIF: {'是' if args.keep_exif else '否'}")
-    logger.info(f"最大深度: {'無限' if args.max_depth is None else args.max_depth}")
-    logger.info(f"Process 數: {args.workers}")
-    if args.dry_run:
-        logger.info("模式: 🔍 DRY-RUN (預覽)")
-    logger.info(f"輸出目錄: {root_path / TARGET_DIR_NAME}")
-    logger.info("=" * 60)
+    welcome_str = (
+        f"📂 [bold cyan]來源掃描目錄[/bold cyan]: {directory}\n"
+        f"📁 [bold magenta]鏡像輸出位置[/bold magenta]: {out_dir_path}\n"
+        f"⚙️  [bold yellow]WebP 模式[/bold yellow]: {'Lossless (無損)' if args.lossless else f'Lossy (品質 {args.quality}%)'}\n"
+        f"🚀 [bold green]並發數量[/bold green]: {args.workers} 行程"
+    )
+    console.print(Panel.fit(welcome_str, title="[bold]圖片轉 WebP 批次工具 v4.0[/bold]"))
 
-    files = collect_files(root_path, SUPPORTED_FORMATS, exclude_dirs={TARGET_DIR_NAME}, max_depth=args.max_depth)
+    # 如果輸出目錄是在根目錄的旁邊（使用者沒有自訂）則我們要把它加入忽略條件，避免二次轉換
+    exclude_targets = {out_dir_path.name} if out_dir_path.parent == root_path else set()
+    files = collect_files(root_path, SUPPORTED_FORMATS, exclude_dirs=exclude_targets, max_depth=args.max_depth)
 
     worker = partial(
         convert_to_webp,
         root_dir=root_path,
+        target_root=out_dir_path,
         quality=args.quality,
         overwrite=args.overwrite,
         dry_run=args.dry_run,
@@ -163,9 +147,10 @@ def main():
         keep_exif=args.keep_exif
     )
 
-    summary = run_pipeline(files, worker, args.workers, args.dry_run, label="轉換")
-    print_summary(summary, success_label="成功轉換", skip_label="跳過(已存在)", after_label="轉換後")
-
+    summary = run_pipeline(files, worker, args.workers, args.dry_run, label="跨格式轉換")
+    
+    after_label_word = "無損 Webp後" if args.lossless else f"Webp ({args.quality}%)後"
+    print_summary(summary, success_label="WebP 轉換成功", skip_label="跳過(已備份/無效)", after_label=after_label_word)
 
 if __name__ == "__main__":
     main()

@@ -1,5 +1,14 @@
 # Agent Logs
 
+- 2026-02-22 22:15
+  - 重點: TUI 終端視覺化、安全避開隱藏目錄、不落地 `--out-dir` 參數導入
+  - 影響:
+    - `pyproject.toml` 加入了 `rich` 依賴。
+    - `utils.py` 進行了 UI 翻新，移除會破壞版面的 `print` 與 `logger`，全部改交由 `rich.progress` 與 `rich.table` 繪製動態進度條及空間報表；
+    - 修改 `collect_files` 函式，自動過濾掉任何以 `.` 或 `__` 開頭之隱藏或專案配置目錄。
+    - `compress_images.py` 與 `images_to_webp.py` 新增 `-O / --out-dir` 選項，容許使用者將壓縮過的檔案完整鏡像（包含同等樹狀目錄）輸往另一個實體路徑避免原資料夾污染。並新增了美觀的起始歡迎面板 (`Panel`)。
+  - 結果: 大幅改善使用者體驗（UX）；進度條讓時間預估更為直觀，且新增之 `--out-dir` 徹底解決了備份檔案雜亂無章的痛點。
+  - 更新者: Antigravity Agent
 - 2026-02-22 21:55
   - 重點: 實作 7 項優化 (ProcessPoolExecutor, lossless, exif, max-depth, logging, ... )
   - 影響:
