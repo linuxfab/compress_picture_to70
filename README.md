@@ -10,18 +10,23 @@
 - ✅ 保留 EXIF 資訊 (GPS、拍攝時間等)
 - ✅ 覆蓋/跳過已存在檔案
 - ✅ 智能判斷：壓縮後變大則自動跳過
-- ✅ 支援格式：JPG、JPEG、PNG、WebP、BMP
+- ✅ 支援格式：JPG、JPEG、PNG、WebP、BMP（BMP 會自動跳過因無壓縮效果）
 - ✅ Dry-run 預覽模式
 - ✅ 總空間節省統計 (原始大小 / 壓縮後大小 / 節省百分比)
+- ✅ 支援深度控制 (--max-depth)
+- ✅ ProcessPoolExecutor 多行程充分利用多核 CPU
+- ✅ 內建 logging 取代一般 print 增進自動化支援
 
 **images-to-webp (WebP 轉檔)**
 - ✅ 將 JPG/PNG/BMP 轉換為 WebP 格式
 - ✅ **保持原始目錄結構**：轉檔後存於 `webpimage` 資料夾中，子目錄結構與來源相同
-- ✅ 自訂 WebP 壓縮品質
-- ✅ 並行處理加速
+- ✅ 自訂 WebP 壓縮品質或無損壓縮 (--lossless)
+- ✅ 保留 EXIF 資訊 (--keep-exif)
+- ✅ 並行處理加速 (ProcessPoolExecutor)
 - ✅ 支援覆蓋已存在檔案
 - ✅ Dry-run 預覽模式
 - ✅ 總空間節省統計
+- ✅ 支援深度控制 (--max-depth)
 
 ## 安裝與執行
 
@@ -60,8 +65,9 @@ uv run compress-img <目錄路徑> [選項]
 | `-q, --quality` | 壓縮品質 1-100 | 70 |
 | `-o, --overwrite` | 覆蓋已存在的壓縮檔 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
-| `-w, --workers` | 並行執行緒數 | 4 |
-| `-n, --dry-run` | 預覽模式：僅列出待處理檔案，不實際壓縮 | 否 |
+| `-w, --workers` | Process 數量 (並行) | 4 |
+| `-n, --dry-run` | 預覽模式：僅列出待處理檔案 | 否 |
+| `-d, --max-depth`| 最大遞迴深度 (0=不進入子目錄) | 無限 |
 
 ### images-to-webp (WebP 轉檔)
 
@@ -73,20 +79,23 @@ uv run images-to-webp <目錄路徑> [選項]
 |------|------|--------|
 | `-q, --quality` | WebP 壓縮品質 1-100 | 80 |
 | `-o, --overwrite` | 覆蓋已存在的 WebP 檔案 | 否 |
-| `-w, --workers` | 並行執行緒數 | 4 |
-| `-n, --dry-run` | 預覽模式：僅列出待處理檔案，不實際轉換 | 否 |
+| `-l, --lossless` | 使用無損壓縮 | 否 |
+| `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
+| `-w, --workers` | Process 數量 (並行) | 4 |
+| `-n, --dry-run` | 預覽模式：僅列出待處理檔案 | 否 |
+| `-d, --max-depth`| 最大遞迴深度 | 無限 |
 
 ### 範例
 
 ```bash
-# [壓縮] 50% 品質，8 執行緒並行處理
-uv run compress-img "D:\Photos" -q 50 -w 8
+# [壓縮] 50% 品質，8 核心並行處理，且只處理當前目錄不進入子目錄 (-d 0)
+uv run compress-img "D:\Photos" -q 50 -w 8 -d 0
 
 # [壓縮] 預覽模式，不實際壓縮
 uv run compress-img "D:\Photos" --dry-run
 
-# [轉檔] 將 D:\Photos 下所有圖片轉為 WebP，存入 D:\Photos\webpimage，品質 90%
-uv run images-to-webp "D:\Photos" -q 90 --overwrite
+# [轉檔] 將 D:\Photos 下所有圖片轉為 WebP，存入 D:\Photos\webpimage，無損壓縮並保留 EXIF
+uv run images-to-webp "D:\Photos" --lossless --keep-exif
 
 # [轉檔] 預覽模式
 uv run images-to-webp "D:\Photos" --dry-run
@@ -99,9 +108,13 @@ uv run images-to-webp
 ### 輸出範例
 
 ```
-圖片壓縮工具 v3.0
+圖片壓縮工具 v4.0
 目標目錄: D:\Photos
 壓縮品質: 70%
+覆蓋模式: 否
+保留EXIF: 否
+最大深度: 無限
+Process 數: 4
 ============================================================
 [1/50] ✓ photo1.jpg -> photo1_70%.jpg (2048.0KB -> 512.0KB, -75.0%)
 [2/50] ✓ photo2.jpg -> photo2_70%.jpg (1024.0KB -> 350.0KB, -65.8%)
@@ -109,7 +122,7 @@ uv run images-to-webp
 ============================================================
 處理完成!
   成功壓縮: 48
-  跳過(已存在/已壓縮): 1
+  跳過(已存在/BMP): 1
   跳過(壓縮後變大): 1
   失敗: 0
 

@@ -1,5 +1,14 @@
 # Agent Logs
 
+- 2026-02-22 21:55
+  - 重點: 實作 7 項優化 (ProcessPoolExecutor, lossless, exif, max-depth, logging, ... )
+  - 影響:
+    - 修改 `utils.py`: 升級 `run_pipeline` 改用 `ProcessPoolExecutor` 加速 CPU 運算；加入 `setup_logger` 使用 `logging` 取代 `print`；在 `collect_files` 加入深度參數 `-d/--max-depth` 支援。
+    - 修改 `compress_images.py`: 加入 BMP 跳過機制；加入 `-d` 參數綁定；更新為 Python logging 機制。升級至 v4.0。
+    - 修改 `images_to_webp.py`: 加入 `-l/--lossless` 與 `-e/--keep-exif` 參數，強化 WebP 轉換。升級至 v3.0。
+    - 加入了基本的單元測試 `tests/test_utils.py`
+  - 結果: 執行速度因多行程可平行化而變得更快；支援深入子目錄控制；支援無損 WebP 轉換；更好的 logging 格式化。
+  - 更新者: Antigravity Agent
 - 2026-02-22 21:47
   - 重點: 架構重構 — 抽共用模組 `utils.py`、消滅全域 mutable state
   - 影響:

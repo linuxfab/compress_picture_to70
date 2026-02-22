@@ -1,15 +1,17 @@
 """
-圖片壓縮工具 v3.0
+圖片壓縮工具 v4.0
 遍歷指定目錄及子目錄，將圖片壓縮後另存新檔
 
 功能:
 - 自訂壓縮比例 (--quality)
-- 並行處理加速
+- 並行處理加速 (多執行緒)
 - 覆蓋/跳過已存在檔案 (--overwrite)
 - 保留 EXIF 資訊 (--keep-exif)
 - 自動跳過壓縮後變大的檔案
 - Dry-run 模式預覽
 - 總空間節省統計
+- 支援深度控制 (--max-depth)
+- 跳過無效壓縮格式 (BMP)
 """
 
 import re
@@ -20,6 +22,7 @@ from PIL import Image
 from utils import (
     FileResult, collect_files, run_pipeline, print_summary,
     create_base_parser, resolve_directory, validate_quality,
+    setup_logger, logger
 )
 
 # 支援的圖片格式
@@ -43,6 +46,10 @@ def compress_image(
     """壓縮單張圖片並另存新檔"""
     try:
         suffix = f"_{quality}%"
+        
+        # BMP 直接跳過
+        if filepath.suffix.lower() == '.bmp':
+            return FileResult('skipped', f"跳過 BMP (不支援無損或有損壓縮): {filepath.name}")
 
         # 檢查是否已經是壓縮過的檔案 (匹配任何 _數字% pattern)
         if COMPRESSED_SUFFIX_PATTERN.search(filepath.stem):
@@ -84,8 +91,7 @@ def compress_image(
         # 判斷輸出格式
         ext = filepath.suffix.lower()
         format_map = {
-            '.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG',
-            '.webp': 'WEBP', '.bmp': 'BMP',
+            '.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.webp': 'WEBP'
         }
         output_format = format_map.get(ext, 'JPEG')
 
@@ -121,13 +127,15 @@ def compress_image(
 
 
 def main():
+    setup_logger()
+    
     parser = create_base_parser(
         description='圖片批量壓縮工具',
         epilog='''
 範例:
   python compress_images.py "D:\\Photos" --quality 50
   python compress_images.py "D:\\Photos" --quality 80 --overwrite --keep-exif
-  python compress_images.py "D:\\Photos" -q 70 -w 8
+  python compress_images.py "D:\\Photos" -q 70 -w 8 -d 1
   python compress_images.py "D:\\Photos" --dry-run
         '''
     )
@@ -148,20 +156,21 @@ def main():
 
     root_path = Path(directory)
     if not root_path.exists():
-        print(f"目錄不存在: {directory}")
+        logger.error(f"目錄不存在: {directory}")
         return
 
-    print(f"\n圖片壓縮工具 v3.0")
-    print(f"目標目錄: {directory}")
-    print(f"壓縮品質: {args.quality}%")
-    print(f"覆蓋模式: {'是' if args.overwrite else '否'}")
-    print(f"保留EXIF: {'是' if args.keep_exif else '否'}")
-    print(f"執行緒數: {args.workers}")
+    logger.info(f"\n圖片壓縮工具 v4.0")
+    logger.info(f"目標目錄: {directory}")
+    logger.info(f"壓縮品質: {args.quality}%")
+    logger.info(f"覆蓋模式: {'是' if args.overwrite else '否'}")
+    logger.info(f"保留EXIF: {'是' if args.keep_exif else '否'}")
+    logger.info(f"最大深度: {'無限' if args.max_depth is None else args.max_depth}")
+    logger.info(f"Process 數: {args.workers}")
     if args.dry_run:
-        print("模式: 🔍 DRY-RUN (預覽)")
-    print("=" * 60)
+        logger.info("模式: 🔍 DRY-RUN (預覽)")
+    logger.info("=" * 60)
 
-    files = collect_files(root_path, SUPPORTED_FORMATS)
+    files = collect_files(root_path, SUPPORTED_FORMATS, max_depth=args.max_depth)
 
     worker = partial(
         compress_image,
@@ -172,7 +181,7 @@ def main():
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="壓縮")
-    print_summary(summary, success_label="成功壓縮")
+    print_summary(summary, success_label="成功壓縮", skip_label="跳過(已存在/BMP)")
 
 
 if __name__ == "__main__":
