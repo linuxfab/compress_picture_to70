@@ -10,6 +10,7 @@ dependencies = [
 
 [project.scripts]
 compress-img = "compress_images:main"
+images-to-webp = "images_to_webp:main"
 
 [build-system]
 requires = ["hatchling"]
