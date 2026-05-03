@@ -51,4 +51,3 @@ cover/
 # Environments
 .env
 .venv
-__pycache__
