@@ -14,10 +14,11 @@
 - 支援讀取 Apple 高效無損圖檔 (.HEIC / .AVIF)
 """
 
+import os
 import re
 from pathlib import Path
 from functools import partial
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 import pillow_heif
 pillow_heif.register_heif_opener()
@@ -26,14 +27,11 @@ pillow_heif.register_heif_opener()
 from utils import (
     FileResult, collect_files, run_pipeline, print_summary,
     create_base_parser, resolve_directory, validate_quality,
-    parse_size_to_bytes, format_size, setup_logger, console
+    parse_size_to_bytes, format_size, setup_logger, console,
+    SUPPORTED_FORMATS, COMPRESSED_SUFFIX_PATTERN
 )
 
-# 支援的圖片格式
-SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.heic', '.avif'}
-
-# 用於偵測已壓縮檔案的 regex pattern (e.g. _70%, _50%)
-COMPRESSED_SUFFIX_PATTERN = re.compile(r'_\d+%$')
+# 支援的圖片格式與 Regex Pattern 已移至 utils.py 集中管理
 
 
 def get_exif(image: Image.Image) -> bytes | None:
@@ -46,7 +44,8 @@ def get_exif(image: Image.Image) -> bytes | None:
 
 def compress_image(
     filepath: Path, root_dir: Path, out_dir: Path | None, 
-    quality: int, overwrite: bool, keep_exif: bool, dry_run: bool
+    quality: int, overwrite: bool, keep_exif: bool, dry_run: bool,
+    skip_if_newer: bool = False
 ) -> FileResult:
     """壓縮單張圖片並另存新檔"""
     try:
@@ -79,8 +78,12 @@ def compress_image(
         if dry_run is False:
             target_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if target_path.exists() and not overwrite:
-            return FileResult('skipped', f"檔案已存在(跳過): {target_path.name}")
+        if target_path.exists():
+            if skip_if_newer:
+                if target_path.stat().st_mtime >= filepath.stat().st_mtime:
+                    return FileResult('skipped', f"目標檔案較新(跳過): {target_path.name}")
+            elif not overwrite:
+                return FileResult('skipped', f"檔案已存在(跳過): {target_path.name}")
 
         original_size = filepath.stat().st_size
 
@@ -206,6 +209,7 @@ def main():
         overwrite=args.overwrite,
         keep_exif=args.keep_exif,
         dry_run=args.dry_run,
+        skip_if_newer=args.skip_if_newer,
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="壓縮與格式標準化")

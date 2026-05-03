@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import Callable
+from typing import Callable, Any, Iterable
 import argparse
 
 # 引入 Rich 函式庫做終端機視覺化美化
@@ -24,7 +24,16 @@ from rich import box
 console = Console()
 logger = logging.getLogger("img_tools")
 
-def setup_logger(verbose: bool = False):
+# --- 集中管理常數 ---
+# 支援的圖片格式
+SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.heic', '.avif'}
+
+# 用於偵測已壓縮檔案的 regex pattern (e.g. _70%, _50%)
+COMPRESSED_SUFFIX_PATTERN = re.compile(r'_\d+%$')
+
+# -----------------
+
+def setup_logger(verbose: bool = False) -> None:
     """初始化底層 Logger 給背景報錯使用，一般輸出改由 Rich 接管"""
     level = logging.DEBUG if verbose else logging.WARNING
     handler = logging.StreamHandler()
@@ -98,14 +107,14 @@ def parse_size_to_bytes(size_str: str | None) -> int | None:
 
 def collect_files(
     directory: Path,
-    supported_formats: set[str],
+    supported_formats: Iterable[str],
     exclude_dirs: set[str] | None = None,
     max_depth: int | None = None,
     min_size_bytes: int | None = None,
     max_size_bytes: int | None = None,
 ) -> list[Path]:
     """收集目錄及子目錄中所有符合格式及大小的檔案，並自動濾除系統隱藏及專案目錄"""
-    files = []
+    files: list[Path] = []
     
     if exclude_dirs is None:
         exclude_dirs = set()
@@ -284,14 +293,14 @@ def create_base_parser(description: str, epilog: str) -> argparse.ArgumentParser
     return parser
 
 
-def resolve_directory(args) -> str | None:
+def resolve_directory(args: argparse.Namespace) -> str | None:
     """解析目錄路徑 (支援互動模式)，回傳 None 表示使用者未輸入"""
     if not args.directory:
         args.directory = input("請輸入目標來源目錄路徑：").strip()
         if not args.directory:
             console.print("[bold red]未輸入目錄，程式結束。[/bold red]")
             return None
-    return args.directory
+    return str(args.directory)
 
 
 def validate_quality(quality: int) -> bool:
@@ -300,3 +309,4 @@ def validate_quality(quality: int) -> bool:
         console.print("[bold red]錯誤：壓縮品質 quality 必須在 1-100 之間。[/bold red]")
         return False
     return True
+

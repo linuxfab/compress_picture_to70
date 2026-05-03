@@ -1,5 +1,14 @@
 # Agent Logs
 
+- 2026-05-03 10:30
+  - 重點: 程式碼結構與維護性優化 (Type Hinting, 常數集中管理, 測試覆蓋率)
+  - 影響: 
+    - `utils.py`: 強化 Type Hinting (Callable, Iterable 等)，並集中定義 `SUPPORTED_FORMATS` 與 `COMPRESSED_SUFFIX_PATTERN`。
+    - `compress_images.py` 與 `images_to_webp.py`: 移除重複定義的常數，改為從 `utils.py` 匯入。
+    - `tests/`: 擴充 `test_utils.py` 並新增 `test_image_logic.py`，使用 Mock 模擬圖片處理流程，大幅提升邏輯驗證的穩定性。
+  - 結果: 程式碼更符合現代 Python 規範 (穩健的類型檢查)，減少維護負擔，並透過單元測試確保核心邏輯在重構過程中未發生倒退。
+  - 更新者: Gemini CLI Agent
+
 - 2026-05-03 10:15
   - 重點: 實作檔案與目錄處理優化 (保留 mtime、增量備份、例外處理)
   - 影響: 

@@ -5,9 +5,10 @@
 可自由指定 `--out-dir` 與 尺寸過濾 (--min-size, --max-size)。
 """
 
+import os
 from pathlib import Path
 from functools import partial
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 import pillow_heif
 pillow_heif.register_heif_opener()
@@ -16,12 +17,12 @@ pillow_heif.register_heif_opener()
 from utils import (
     FileResult, collect_files, run_pipeline, print_summary,
     create_base_parser, resolve_directory, validate_quality,
-    parse_size_to_bytes, format_size, setup_logger, console
+    parse_size_to_bytes, format_size, setup_logger, console,
+    SUPPORTED_FORMATS
 )
 from rich.panel import Panel
 
-# 支援的輸入圖片格式
-SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.bmp', '.heic', '.avif'}
+# 支援的圖片格式已移至 utils.py 集中管理
 
 
 def get_exif(image: Image.Image) -> bytes | None:
@@ -34,7 +35,8 @@ def get_exif(image: Image.Image) -> bytes | None:
 
 def convert_to_webp(
     filepath: Path, root_dir: Path, target_root: Path, quality: int, 
-    overwrite: bool, dry_run: bool, lossless: bool, keep_exif: bool
+    overwrite: bool, dry_run: bool, lossless: bool, keep_exif: bool,
+    skip_if_newer: bool = False
 ) -> FileResult:
     """將單張圖片轉換為 WebP 並另存新檔"""
     try:
@@ -85,12 +87,18 @@ def convert_to_webp(
         img.save(target_path, **save_kwargs)
         new_size = target_path.stat().st_size
 
+        # 保留修改時間 (mtime)
+        orig_stat = filepath.stat()
+        os.utime(target_path, (orig_stat.st_atime, orig_stat.st_mtime))
+
         return FileResult(
             'success',
             "已隱藏", # rich進度條自行處理即可
             original_size, new_size,
         )
 
+    except UnidentifiedImageError:
+        return FileResult('failed', f"檔案 {filepath.name} 無法辨識或已損壞")
     except Exception as e:
         return FileResult('failed', f"檔案 {filepath.name} 解析失敗: {e}")
 
