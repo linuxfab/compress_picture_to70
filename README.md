@@ -1,5 +1,8 @@
 # 圖片批量壓縮與轉檔工具
 
+- GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
+- 最後更新時間: 2026-05-03
+
 遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。已改用 `uv` 進行環境與依賴管理。
 
 ## 專案功能
