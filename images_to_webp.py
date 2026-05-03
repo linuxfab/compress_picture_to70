@@ -47,8 +47,12 @@ def convert_to_webp(
         target_path = target_root / rel_path.with_suffix('.webp')
 
         # 檢查檔案是否已存在
-        if target_path.exists() and not overwrite:
-            return FileResult('skipped', f"檔案已存在(跳過): {target_path.name}")
+        if target_path.exists():
+            if skip_if_newer:
+                if target_path.stat().st_mtime >= filepath.stat().st_mtime:
+                    return FileResult('skipped', f"目標檔案較新(跳過): {target_path.name}")
+            elif not overwrite:
+                return FileResult('skipped', f"檔案已存在(跳過): {target_path.name}")
 
         original_size = filepath.stat().st_size
 
@@ -152,7 +156,8 @@ def main():
         overwrite=args.overwrite,
         dry_run=args.dry_run,
         lossless=args.lossless,
-        keep_exif=args.keep_exif
+        keep_exif=args.keep_exif,
+        skip_if_newer=args.skip_if_newer
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="跨格式轉換")

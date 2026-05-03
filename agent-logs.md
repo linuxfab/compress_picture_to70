@@ -1,5 +1,15 @@
 # Agent Logs
 
+- 2026-05-03 10:15
+  - 重點: 實作檔案與目錄處理優化 (保留 mtime、增量備份、例外處理)
+  - 影響: 
+    - `utils.py` 新增 `--skip-if-newer` CLI 參數支援。
+    - `compress_images.py` 和 `images_to_webp.py` 新增使用 `os.utime` 同步來源圖片的建立/修改時間至新圖片上。
+    - 加入了針對損壞圖檔的 `PIL.UnidentifiedImageError` 特化例外處理。
+    - 修改檔案存在時的覆寫邏輯，搭配 `--skip-if-newer` 實作增量備份過濾機制。
+  - 結果: 產出的檔案能完美保留原始照片的拍攝整理時間順序，並能安全地對大型資料夾進行增量壓縮，同時不會因少數損壞圖檔而發生難以理解的報錯。
+  - 更新者: Gemini CLI Agent
+
 - 2026-05-03 10:00
   - 重點: 專案分析與 GitHub 資訊同步
   - 影響: 

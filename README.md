@@ -92,6 +92,7 @@ uv run images-to-webp <目錄路徑> [選項]
 | `-q, --quality` | WebP 壓縮品質 1-100 | 80 |
 | `--min-size` | 最小檔案過濾 (低於此大小將跳過，如 500KB) | (無) |
 | `--max-size` | 最大檔案過濾 | (無) |
+| `--skip-if-newer` | 若目標檔案存在且比來源新則跳過 (適用於增量備份) | 否 |
 | `-o, --overwrite` | 覆蓋已存在的 WebP 檔案 | 否 |
 | `-l, --lossless` | 使用無損壓縮 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
@@ -178,6 +179,17 @@ compress_images.py
 
 images_to_webp.py
 ├── convert_to_webp()           — 單張轉檔 Worker (回傳 FileResult)
+└── main()                      — CLI 入口 (partial 綁定 → run_pipeline)
+```
+
+## License
+
+MIT
+
+## Authors
+- [linuxfab](https://github.com/linuxfab)
+- Last Update: 2026-02-22
+leResult)
 └── main()                      — CLI 入口 (partial 綁定 → run_pipeline)
 ```
 

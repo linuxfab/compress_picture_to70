@@ -279,6 +279,8 @@ def create_base_parser(description: str, epilog: str) -> argparse.ArgumentParser
                         help='最小檔案限制 (低於此大小將被跳過)，範例: 500KB, 2MB')
     parser.add_argument('--max-size', type=str, default=None,
                         help='最大檔案限制 (高於此大小將被跳過)，範例: 10MB')
+    parser.add_argument('--skip-if-newer', action='store_true',
+                        help='如果目標檔案存在且比來源檔案新則跳過 (適用於增量備份)')
     return parser
 
 

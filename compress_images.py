@@ -130,12 +130,18 @@ def compress_image(
             target_path.unlink()
         temp_path.rename(target_path)
 
+        # 保留修改時間 (mtime)
+        orig_stat = filepath.stat()
+        os.utime(target_path, (orig_stat.st_atime, orig_stat.st_mtime))
+
         return FileResult(
             'success',
             "已隱藏",
             original_size, new_size,
         )
 
+    except UnidentifiedImageError:
+        return FileResult('failed', f"檔案 {filepath.name} 無法辨識或已損壞")
     except Exception as e:
         return FileResult('failed', f"檔案 {filepath.name} 解析失敗: {e}")
 
