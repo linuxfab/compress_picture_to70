@@ -1,87 +1,82 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, mock_open
 from pathlib import Path
-from compress_images import compress_image
-from images_to_webp import convert_to_webp
-from utils import FileResult
+from utils import process_image_core, FileResult
+import io
 
 class TestImageLogic(unittest.TestCase):
     def setUp(self):
         self.root_dir = Path("/mock/root")
         self.filepath = self.root_dir / "test.jpg"
-        self.out_dir = Path("/mock/out")
+        self.target_path = Path("/mock/out/test.jpg")
 
-    @patch("compress_images.Image.open")
-    @patch("compress_images.Path.mkdir")
-    @patch("compress_images.Path.stat")
-    @patch("compress_images.os.utime")
-    @patch("compress_images.Path.unlink")
-    @patch("compress_images.Path.rename")
-    @patch("compress_images.Path.exists")
-    def test_compress_image_success(self, mock_exists, mock_rename, mock_unlink, mock_utime, mock_stat, mock_mkdir, mock_image_open):
-        # 設定 Mock
+    @patch("utils.Image.open")
+    @patch("utils.Path.stat")
+    @patch("utils.os.utime")
+    @patch("utils.open", new_callable=mock_open)
+    @patch("utils.Path.mkdir")
+    def test_process_image_core_success(self, mock_mkdir, mock_file_open, mock_utime, mock_stat, mock_image_open):
+        # 模擬圖片
         mock_img = MagicMock()
         mock_img.info = {}
         mock_img.mode = 'RGB'
+        mock_img.width = 100
+        mock_img.height = 100
         mock_image_open.return_value = mock_img
         
-        mock_exists.return_value = False
-        
-        # 模擬 stat
+        # 模擬檔案大小
         mock_stat_val = MagicMock()
         mock_stat_val.st_size = 1000
         mock_stat_val.st_atime = 123456
         mock_stat_val.st_mtime = 123456
         mock_stat.return_value = mock_stat_val
 
-        # 模擬儲存後變小 (temp_path.stat().st_size)
-        # 注意: compress_image 會呼叫多次 stat, 所以要用 side_effect 或分開 patch
-        with patch("compress_images.Path.with_suffix") as mock_with_suffix:
-            mock_temp = MagicMock()
-            mock_temp.stat.return_value.st_size = 500
-            mock_temp.exists.return_value = False
-            mock_with_suffix.return_value = mock_temp
-            
-            result = compress_image(
-                self.filepath, self.root_dir, self.out_dir,
-                quality=70, overwrite=True, keep_exif=False, dry_run=False
-            )
+        # 模擬儲存到 BytesIO
+        def mock_save(buf, format=None, **kwargs):
+            buf.write(b"fake image data")
+        mock_img.save.side_effect = mock_save
 
-        if result.status == 'failed':
-            print(f"DEBUG: Error message: {result.message}")
+        result = process_image_core(
+            filepath=self.filepath,
+            target_path=self.target_path,
+            quality=70,
+            keep_exif=True,
+            scale=1.0,
+            output_format='JPEG'
+        )
 
         self.assertEqual(result.status, 'success')
         self.assertEqual(result.original_size, 1000)
-        self.assertEqual(result.new_size, 500)
+        self.assertGreater(result.new_size, 0)
         mock_img.save.assert_called()
+        mock_file_open.assert_called_with(self.target_path, 'wb')
         mock_utime.assert_called()
 
-    @patch("images_to_webp.Image.open")
-    @patch("images_to_webp.Path.mkdir")
-    @patch("images_to_webp.Path.stat")
-    @patch("images_to_webp.os.utime")
-    def test_convert_to_webp_success(self, mock_utime, mock_stat, mock_mkdir, mock_image_open):
+    @patch("utils.Image.open")
+    @patch("utils.Path.stat")
+    def test_process_image_core_size_skip(self, mock_stat, mock_image_open):
         mock_img = MagicMock()
         mock_img.info = {}
         mock_img.mode = 'RGB'
         mock_image_open.return_value = mock_img
         
         mock_stat_val = MagicMock()
-        mock_stat_val.st_size = 1000
-        mock_stat_val.st_atime = 123456
-        mock_stat_val.st_mtime = 123456
+        mock_stat_val.st_size = 10 # 很小的原始大小
         mock_stat.return_value = mock_stat_val
-        
-        # 模擬 target_path
-        with patch("images_to_webp.Path.exists", return_value=False):
-            result = convert_to_webp(
-                self.filepath, self.root_dir, self.out_dir,
-                quality=80, overwrite=True, dry_run=False, lossless=False, keep_exif=False
-            )
 
-        self.assertEqual(result.status, 'success')
-        mock_img.save.assert_called()
-        mock_utime.assert_called()
+        # 模擬儲存後變大
+        def mock_save(buf, format=None, **kwargs):
+            buf.write(b"this is definitely larger than 10 bytes")
+        mock_img.save.side_effect = mock_save
+
+        result = process_image_core(
+            filepath=self.filepath,
+            target_path=self.target_path,
+            quality=70,
+            skip_if_larger=True
+        )
+
+        self.assertEqual(result.status, 'size_skip')
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,48 +1,18 @@
 """
-圖片壓縮工具 v8.0
+圖片壓縮工具 v8.1
 遍歷指定目錄及子目錄，將圖片壓縮後另存新檔
-
-功能:
-- 自訂壓縮比例 (--quality)
-- 並行處理加速 (多執行緒)
-- 支援 `--out-dir` 將檔案以同樣的樹狀結構鏡像匯出 (不污染原資料夾)
-- 覆蓋/跳過已存在檔案 (--overwrite)
-- 保留 EXIF 資訊 (--keep-exif)
-- 自動跳過壓縮後變大的檔案
-- 支援深度控制 (--max-depth) 以及 尺寸過濾 (--min-size, --max-size)
-- 跳過無效壓縮格式 (BMP)
-- 支援讀取 Apple 高效無損圖檔 (.HEIC / .AVIF)
-- 支援圖片縮放 (--scale)
-- 支援原地覆蓋 (--in-place)
 """
 
 import os
-import re
 from pathlib import Path
 from functools import partial
-from PIL import Image, UnidentifiedImageError
-
-import pillow_heif
-pillow_heif.register_heif_opener()
-
 
 from utils import (
     FileResult, collect_files, run_pipeline, print_summary,
     create_base_parser, resolve_directory, validate_quality,
     parse_size_to_bytes, format_size, setup_logger, console,
-    SUPPORTED_FORMATS, COMPRESSED_SUFFIX_PATTERN
+    SUPPORTED_FORMATS, COMPRESSED_SUFFIX_PATTERN, process_image_core
 )
-
-# 支援的圖片格式與 Regex Pattern 已移至 utils.py 集中管理
-
-
-def get_exif(image: Image.Image) -> bytes | None:
-    """取得圖片的 EXIF 資料"""
-    try:
-        return image.info.get('exif')
-    except Exception:
-        return None
-
 
 def compress_image(
     filepath: Path, root_dir: Path, out_dir: Path | None, 
@@ -53,9 +23,9 @@ def compress_image(
     try:
         suffix = f"_{quality}%"
         
-        # BMP 直接跳過
+        # BMP 直接跳過 (雖然 PIL 支援，但通常壓縮效果差)
         if filepath.suffix.lower() == '.bmp':
-            return FileResult('skipped', f"跳過 BMP (不支援壓縮): {filepath.name}")
+            return FileResult('skipped', f"跳過 BMP: {filepath.name}")
 
         # 1. 決定輸出目標的「相對存儲目錄」與「檔名」
         if in_place:
@@ -65,96 +35,40 @@ def compress_image(
                 rel_path = filepath.relative_to(root_dir)
             except ValueError:
                 rel_path = Path(filepath.name)
-            
             target_path = out_dir / rel_path
         else:
-            # 原地後綴模式
             if COMPRESSED_SUFFIX_PATTERN.search(filepath.stem):
                 return FileResult('skipped', f"跳過已壓縮: {filepath.name}")
             target_path = filepath.parent / f"{filepath.stem}{suffix}{filepath.suffix}"
 
-        # 2. 如果來源是 HEIC 或 AVIF，強制把輸出副檔名改為常規能讀取的格式 (.jpg)
+        # HEIC / AVIF 強制轉 JPEG 確保相容性
         if filepath.suffix.lower() in {'.heic', '.avif'}:
             target_path = target_path.with_suffix('.jpg')
 
-        # 確保資料夾存在
-        if dry_run is False:
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-
+        # 檢查檔案是否已存在或較新
         if target_path.exists():
-            if skip_if_newer:
-                if target_path.stat().st_mtime >= filepath.stat().st_mtime:
-                    return FileResult('skipped', f"目標檔案較新(跳過): {target_path.name}")
+            if skip_if_newer and target_path.stat().st_mtime >= filepath.stat().st_mtime:
+                return FileResult('skipped', f"目標檔案較新: {target_path.name}")
             elif not overwrite and not in_place:
-                return FileResult('skipped', f"檔案已存在(跳過): {target_path.name}")
-
-        original_size = filepath.stat().st_size
+                return FileResult('skipped', f"檔案已存在: {target_path.name}")
 
         if dry_run:
-            return FileResult(
-                'dry_run',
-                f"[預覽] 將建立: {target_path} ({original_size / 1024:.1f}KB)",
-            )
+            return FileResult('dry_run', f"[預覽] 將壓縮: {target_path.name} ({format_size(filepath.stat().st_size)})")
 
-        # 3. 開啟圖片並抽取 EXIF
-        img = Image.open(filepath)
-
-        # 圖片縮放處理
-        if 0.1 <= scale < 1.0:
-            new_width = max(1, int(img.width * scale))
-            new_height = max(1, int(img.height * scale))
-            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-        exif_data = get_exif(img) if keep_exif else None
-        save_kwargs = {'optimize': True}
-
-        # 判定將被儲存為哪一種格式 (支援 HEIC 轉換成 JPEG)
-        ext = target_path.suffix.lower()
-        if ext in {'.jpg', '.jpeg', '.webp'}:
-            save_kwargs['quality'] = quality
-            if exif_data:
-                save_kwargs['exif'] = exif_data
-            if img.mode in ('RGBA', 'P', 'CMYK'):
-                img = img.convert('RGB')
-        elif ext == '.png':
-            pass
-
-        format_map = {
-            '.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.webp': 'WEBP'
-        }
-        output_format = format_map.get(ext, 'JPEG')
-
-        # 4. 存成暫存檔檢查大小
-        temp_path = target_path.with_suffix('.tmp')
-        img.save(temp_path, format=output_format, **save_kwargs)
-        new_size = temp_path.stat().st_size
-
-        # 5. 放棄沒有變小的檔案 (除非原本是 HEIC, 那就不管大小照樣過去 因為目的有時是轉檔)
-        orig_ext = filepath.suffix.lower()
-        if new_size >= original_size and orig_ext not in {'.heic', '.avif'}:
-            temp_path.unlink()
-            return FileResult(
-                'size_skip',
-                f"檔案 {filepath.name} 越壓越大，捨棄變更",
-            )
-
-        # 改名成正式檔
-        if target_path.exists():
-            target_path.unlink()
-        temp_path.rename(target_path)
-
-        # 保留修改時間 (mtime)
-        orig_stat = filepath.stat()
-        os.utime(target_path, (orig_stat.st_atime, orig_stat.st_mtime))
-
-        return FileResult(
-            'success',
-            "已隱藏",
-            original_size, new_size,
+        # 呼叫核心處理
+        fmt_map = {'.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.webp': 'WEBP'}
+        output_format = fmt_map.get(target_path.suffix.lower(), 'JPEG')
+        
+        return process_image_core(
+            filepath=filepath,
+            target_path=target_path,
+            quality=quality,
+            keep_exif=keep_exif,
+            scale=scale,
+            output_format=output_format,
+            force_convert_from={'.heic', '.avif'}
         )
 
-    except UnidentifiedImageError:
-        return FileResult('failed', f"檔案 {filepath.name} 無法辨識或已損壞")
     except Exception as e:
         return FileResult('failed', f"檔案 {filepath.name} 解析失敗: {e}")
 
@@ -164,48 +78,29 @@ def main():
     
     parser = create_base_parser(
         description='圖片批量壓縮工具 (支援 HEIC 讀取與尺寸過濾)',
-        epilog='''
-範例:
-  python compress_images.py "D:\\Photos" -O "E:\\Photos_Zip" -q 50
-  
-  # 過濾：只挑選大於 1MB 且小於 50MB 的圖庫進行原地壓圖
-  python compress_images.py "D:\\Photos" --min-size 1MB --max-size 50MB
-        '''
+        epilog='範例: python compress_images.py "D:\\Photos" -O "E:\\Photos_Zip" -q 50'
     )
-    parser.add_argument('-q', '--quality', type=int, default=70,
-                        help='壓縮品質 1-100 (預設: 70)')
-    parser.add_argument('-o', '--overwrite', action='store_true',
-                        help='覆蓋已存在的壓縮檔')
-    parser.add_argument('-e', '--keep-exif', action='store_true',
-                        help='保留 EXIF 資訊 (GPS、拍攝時間等)')
+    parser.add_argument('-q', '--quality', type=int, default=70, help='壓縮品質 1-100 (預設: 70)')
+    parser.add_argument('-o', '--overwrite', action='store_true', help='覆蓋已存在的壓縮檔')
+    parser.add_argument('-e', '--keep-exif', action='store_true', help='保留 EXIF 資訊')
 
     args = parser.parse_args()
-
-    min_size = parse_size_to_bytes(args.min_size)
-    max_size = parse_size_to_bytes(args.max_size)
-
     directory = resolve_directory(args)
     if not directory or not validate_quality(args.quality):
         return
 
+    min_size = parse_size_to_bytes(args.min_size)
+    max_size = parse_size_to_bytes(args.max_size)
     root_path = Path(directory)
-    if not root_path.exists():
-        console.print(f"[bold red]❌ 目錄不存在: {directory}[/bold red]")
-        return
-        
     out_dir_path = Path(args.out_dir) if args.out_dir else None
 
     from rich.panel import Panel
-    
     welcome_str = (
-        f"📂 [bold cyan]目標歸檔來源[/bold cyan]: {directory}\n"
-        f"📁 [bold magenta]最後存放位置[/bold magenta]: {args.out_dir if args.out_dir else ('[原地覆蓋]' if args.in_place else '[原地放置並加後綴字]')}\n"
-        f"⚙️  [bold yellow]壓縮品質[/bold yellow]: {args.quality}%\n"
-        f"📐 [bold blue]縮放比例[/bold blue]: {args.scale}\n"
-        f"⚖️  [bold yellow]檔案過濾範圍[/bold yellow]: {'不限' if not min_size else format_size(min_size)} ~ {'不限' if not max_size else format_size(max_size)}\n"
-        f"🚀 [bold green]並發數量[/bold green]: {args.workers}"
+        f"📂 [bold cyan]目標來源[/bold cyan]: {directory}\n"
+        f"📁 [bold magenta]輸出位置[/bold magenta]: {args.out_dir if args.out_dir else ('[原地覆蓋]' if args.in_place else '[原地後綴]')}\n"
+        f"⚙️  [bold yellow]品質[/bold yellow]: {args.quality}% | [bold green]並發[/bold green]: {args.workers}"
     )
-    console.print(Panel.fit(welcome_str, title="[bold]圖片壓縮工具 v8.0[/bold]"))
+    console.print(Panel.fit(welcome_str, title="[bold]圖片壓縮工具 v8.1[/bold]"))
 
     files = collect_files(
         root_path, SUPPORTED_FORMATS, max_depth=args.max_depth,
@@ -213,20 +108,13 @@ def main():
     )
 
     worker = partial(
-        compress_image,
-        root_dir=root_path,
-        out_dir=out_dir_path,
-        quality=args.quality,
-        overwrite=args.overwrite,
-        keep_exif=args.keep_exif,
-        dry_run=args.dry_run,
-        skip_if_newer=args.skip_if_newer,
-        scale=args.scale,
-        in_place=args.in_place,
+        compress_image, root_dir=root_path, out_dir=out_dir_path,
+        quality=args.quality, overwrite=args.overwrite, keep_exif=args.keep_exif,
+        dry_run=args.dry_run, skip_if_newer=args.skip_if_newer, scale=args.scale, in_place=args.in_place
     )
 
-    summary = run_pipeline(files, worker, args.workers, args.dry_run, label="壓縮與格式標準化")
-    print_summary(summary, success_label="精簡與輸出成功", skip_label="條件不符跳過")
+    summary = run_pipeline(files, worker, args.workers, args.dry_run, label="壓縮與格式化")
+    print_summary(summary, success_label="精簡與輸出成功")
 
 if __name__ == "__main__":
     main()
