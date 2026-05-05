@@ -1,5 +1,14 @@
 # Agent Logs
 
+- 2026-05-05 22:35
+  - 重點: 解決 Git 同步衝突與清理 `.gitignore` 漏網之魚
+  - 影響: 
+    - 執行 `git rm -r --cached __pycache__`: 修正 `__pycache__` 被錯誤追蹤的問題。
+    - 解決 `git pull` 衝突: 處理 `__pycache__` 檔案的 modify/delete 衝突。
+    - 執行 `git push`: 同步本地修復至遠端。
+  - 結果: 恢復倉庫整潔，確保後續同步不再受編譯暫存檔干擾。
+  - 更新者: Antigravity Agent
+
 - 2026-05-05 14:35
   - 重點: 代碼架構大重構與效能優化 (v8.1 / v7.1)
   - 影響: 
