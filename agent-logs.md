@@ -1,5 +1,15 @@
 # Agent Logs
 
+- 2026-05-05 14:35
+  - 重點: 代碼架構大重構與效能優化 (v8.1 / v7.1)
+  - 影響: 
+    - 修改 `utils.py`: 實作 `process_image_core` 統一處理圖片邏輯；優化 `collect_files` 使用 `os.walk` 提升效能。
+    - 修改 `compress_images.py`: 使用 `process_image_core` 簡化邏輯，提升至 v8.1。
+    - 修改 `images_to_webp.py`: 使用 `process_image_core` 簡化邏輯，提升至 v7.1。
+    - 更新 `README.md`: 反映重構後的架構與新功能（如平均節省空間）。
+  - 結果: 大幅提升程式碼重用性與執行效能，減少磁碟 I/O，並提供更詳細的統計數據。
+  - 更新者: Gemini CLI Agent
+
 - 2026-05-05 16:51
   - 重點: 實作原地覆蓋功能 (`--in-place`)
   - 影響: 

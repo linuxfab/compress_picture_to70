@@ -1,9 +1,16 @@
-# 圖片批量壓縮與轉檔工具
+# 圖片批量壓縮與轉檔工具 v8.1 / v7.1
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
 - 最後更新時間: 2026-05-05
 
-遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。已改用 `uv` 進行環境與依賴管理。
+遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。本版本進行了重大重構，大幅提升了效能與代碼品質。
+
+## 最新改進 (v8.1 / v7.1)
+- **核心重構**: 統一了 `compress_images.py` 與 `images_to_webp.py` 的底層邏輯，提升代碼穩定性。
+- **效能優化**: 改用 `os.walk` 進行高效檔案遍歷，大幅提升大型目錄的掃描速度。
+- **減少磁碟損耗**: 使用 `io.BytesIO` 在記憶體中進行大小檢查，避免不必要的臨時檔案寫入。
+- **增強統計**: 結尾報告新增「平均每張節省空間」，讓優化效果一目瞭然。
+- **更好相容性**: 自動處理色彩空間轉換，支援 HEIC/AVIF 讀取。
 
 ## 專案功能
 
@@ -18,26 +25,18 @@
 - ✅ 總空間節省統計 (原始大小 / 壓縮後大小 / 節省百分比)
 - ✅ 支援深度控制 (`--max-depth`)
 - ✅ **針對檔案大小進行智慧過濾 (`--min-size`、`--max-size`)**
-- ✅ **支援圖片縮放 (`--scale`)**，例如 0.5 可將解析度長寬各減半
-- ✅ **全新: 支援原地覆蓋 (`--in-place`)**，直接取代原檔不加後綴字
+- ✅ **支援圖片縮放 (`--scale`)**
+- ✅ **支援原地覆蓋 (`--in-place`)**，直接取代原檔不加後綴字
 - ✅ Rich 終端機視覺化 (動態進度條、精美報表)
-- ✅ 自訂遠端輸出目錄 `--out-dir` 不落地污染資料夾
-- ✅ 自動略過隱藏目錄 (`.git`, `.venv` 等)
 
 **images-to-webp (WebP 轉檔)**
 - ✅ 將 JPG/PNG/BMP 等格式（**包含 Apple 的 .HEIC**）無縫轉換為 WebP 格式
-- ✅ **保持原始目錄結構**：轉檔後存於 `webpimage` 資料夾或自訂 `--out-dir`，子目錄結構不變
+- ✅ **保持原始目錄結構**：轉檔後子目錄結構不變
 - ✅ 自訂 WebP 壓縮品質或無損壓縮 (--lossless)
 - ✅ 保留 EXIF 資訊 (--keep-exif)
 - ✅ 並行處理加速 (ProcessPoolExecutor)
-- ✅ 支援覆蓋已存在檔案
-- ✅ Dry-run 預覽模式
-- ✅ 總空間節省統計
-- ✅ 支援 **深度控制 (--max-depth)** 以及 **智慧大小過濾 (--min-size, --max-size)**
-- ✅ **支援圖片縮放 (`--scale`)**
-- ✅ **全新: 支援原地轉換 (`--in-place`)**，轉換成功後自動刪除原始檔案
+- ✅ 支援 **原地轉換 (`--in-place`)**，轉換成功後自動刪除原始檔案
 - ✅ Rich 終端機視覺化 (動態進度條、精美報表)
-- ✅ 自動略過隱藏目錄
 
 ## 安裝與執行
 
@@ -58,7 +57,7 @@ uv sync
 uv run compress-img "D:\Photos"
 ```
 
-**圖片轉 WebP (輸出至 webpimage)**
+**圖片轉 WebP (輸出至 webp_output)**
 ```bash
 uv run images-to-webp "D:\Photos"
 ```
@@ -76,15 +75,14 @@ uv run compress-img <目錄路徑> [選項]
 | `-O, --out-dir` | 自訂輸出目錄 (留空則在原地建立) | (無) |
 | `-q, --quality` | 壓縮品質 1-100 | 70 |
 | `--scale` | 縮放比例 (0.1-1.0)，如 0.5 為長寬減半 | 1.0 |
-| `--in-place` | **原地覆蓋：直接取代原始檔案 (不加後綴)** | 否 |
-| `--min-size` | 最小檔案過濾 (低於此大小將跳過，如 500KB, 1MB) | (無) |
-| `--max-size` | 最大檔案過濾 (高於此大小將跳過) | (無) |
+| `--in-place` | 原地覆蓋：直接取代原始檔案 (不加後綴) | 否 |
+| `--min-size` | 最小檔案過濾 (如 500KB, 1MB) | (無) |
+| `--max-size` | 最大檔案過濾 | (無) |
 | `-o, --overwrite` | 覆蓋已存在的壓縮檔 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
 | `-w, --workers` | Process 數量 (並行) | 4 |
 | `-n, --dry-run` | 預覽模式：僅列出待處理檔案 | 否 |
 | `-d, --max-depth`| 最大遞迴深度 (0=不進入子目錄) | 無限 |
-| `--skip-if-newer` | 若目標檔案存在且比來源新則跳過 | 否 |
 
 ### images-to-webp (WebP 轉檔)
 
@@ -94,102 +92,29 @@ uv run images-to-webp <目錄路徑> [選項]
 
 | 參數 | 說明 | 預設值 |
 |------|------|--------|
-| `-O, --out-dir` | 自訂輸出目錄 (留空則建立 webpimage 夾) | (無) |
+| `-O, --out-dir` | 自訂輸出目錄 | (無) |
 | `-q, --quality` | WebP 壓縮品質 1-100 | 80 |
-| `--scale` | 縮放比例 (0.1-1.0) | 1.0 |
-| `--in-place` | **原地轉換：轉換成功後刪除原始檔案** | 否 |
-| `--min-size` | 最小檔案過濾 (低於此大小將跳過，如 500KB) | (無) |
-| `--max-size` | 最大檔案過濾 | (無) |
-| `--skip-if-newer` | 若目標檔案存在且比來源新則跳過 (適用於增量備份) | 否 |
-| `-o, --overwrite` | 覆蓋已存在的 WebP 檔案 | 否 |
+| `--in-place` | 原地轉換：轉換成功後刪除原始檔案 | 否 |
 | `-l, --lossless` | 使用無損壓縮 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
-| `-w, --workers` | Process 數量 (並行) | 4 |
-| `-n, --dry-run` | 預覽模式：僅列出待處理檔案 | 否 |
-| `-d, --max-depth`| 最大遞迴深度 | 無限 |
-
-### 範例
-
-```bash
-# [解析度減半+畫質80%+原地覆蓋]
-uv run compress-img "D:\Photos" --scale 0.5 -q 80 --in-place
-
-# [轉 WebP+解析度減半+原地覆蓋] (轉換後會刪除原圖)
-uv run images-to-webp "D:\Photos" --scale 0.5 -q 80 --in-place
-
-# [壓縮] 不落地：將 D:\Photos 目錄的結構跟檔案，壓縮存出至 E:\Backup，且品質 50%
-uv run compress-img "D:\Photos" -O "E:\Backup" -q 50
-
-# [過濾壓縮] 針對硬碟上 "大於 1MB 且小於 50MB" 的圖去執行減肥
-uv run compress-img "D:\Photos" --min-size 1MB --max-size 50MB
-
-# 互動模式 (會提示輸入目錄)
-uv run compress-img
-uv run images-to-webp
-```
-
-### 輸出範例
-
-```
-╭────────────────── 圖片壓縮工具 v8.0 ──────────────────╮
-│ 📂 目標歸檔來源: D:\Photos                          │
-│ 📁 最後存放位置: [原地覆蓋]                           │
-│ ⚙️   壓縮品質: 80%                                   │
-│ 📐 縮放比例: 0.5                                     │
-│ 🚀 並發數量: 4                                       │
-╰─────────────────────────────────────────────────────╯
-找到 50 張圖片，開始進行 壓縮與格式標準化...
-
-⠋ 壓縮中... ━━━━━━━━━━━━━━━━━━━━━━━━━╸ 100% 0:00:03
-
-╭─ 📊 執行結果分析 ─┬──────╮
-│ 狀態              │ 數量 │
-├───────────────────┼──────┤
-│ 精簡與輸出成功    │   48 │
-│ 條件不符跳過      │    1 │
-│ 跳過 (無效壓縮)   │    1 │
-│ 失敗              │    0 │
-╰───────────────────┴──────╯
-╭────────────────┬────────────────────╮
-│ 💾 磁碟空間變化   │           容量大小 │
-├────────────────┼────────────────────┤
-│ 原始總大小      │          150.2 MB  │
-│ 處理後總大小    │           42.3 MB  │
-│ 實際節省空間    │    107.9 MB (71.8%)│
-╰────────────────┴────────────────────╯
-```
 
 ## 專案結構
-- `utils.py`: 共用模組 (FileResult、並行管線、統計彙整、CLI 共用元件)
-- `compress_images.py`: 圖片壓縮邏輯 (v8.0)
-- `images_to_webp.py`: WebP 轉檔與目錄鏡像邏輯 (v7.0)
+- `utils.py`: 共用核心模組 (v8.1/v7.1 重構版)
+- `compress_images.py`: 圖片壓縮 CLI
+- `images_to_webp.py`: WebP 轉檔 CLI
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
-- `uv.lock`: 依賴鎖定檔
 
 ## 架構設計
 
 ```
 utils.py
-├── FileResult (dataclass)     — 單檔處理結果
-├── ProcessingSummary           — 批次統計摘要
-├── collect_files()             — 遞迴收集圖片檔案
-├── run_pipeline()              — 並行處理管線 (ProcessPoolExecutor)
-├── print_summary()             — 結果/空間統計輸出 (Rich Table)
-├── create_base_parser()        — 共用 argparse 建構
-├── resolve_directory()         — 目錄解析 (含互動模式)
-└── validate_quality()          — 品質參數驗證
-
-compress_images.py (v8.0)
-├── compress_image()            — 單張壓縮 Worker (支援縮放與 --in-place)
-└── main()                      — CLI 入口 (整合 Rich UI)
-
-images_to_webp.py (v7.0)
-├── convert_to_webp()           — 單張轉檔 Worker (支援縮放與 --in-place 刪除原檔)
-└── main()                      — CLI 入口 (整合 Rich UI)
+├── process_image_core()        — [NEW] 統一的圖片處理核心 (開啟/縮放/轉換/緩衝區儲存)
+├── collect_files()             — [OPTIMIZED] 使用 os.walk 提升掃描效能
+├── run_pipeline()              — 並行處理管線
+└── print_summary()             — [NEW] 包含平均節省空間的報表
 ```
 
 ## License
-
 MIT
 
 ## Authors

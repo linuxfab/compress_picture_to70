@@ -6,10 +6,12 @@
 
 import logging
 import re
+import os
+import io
 from dataclasses import dataclass
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import Callable, Any, Iterable
+from typing import Callable, Any, Iterable, Protocol
 import argparse
 
 # 引入 Rich 函式庫做終端機視覺化美化
@@ -20,6 +22,10 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich import box
+from PIL import Image, UnidentifiedImageError
+
+import pillow_heif
+pillow_heif.register_heif_opener()
 
 console = Console()
 logger = logging.getLogger("img_tools")
@@ -123,40 +129,40 @@ def collect_files(
     def is_ignored(part: str) -> bool:
         return part.startswith('.') or part.startswith('__') or part in exclude_dirs
 
-    for f in directory.rglob('*'):
-        if not f.is_file():
-            continue
-            
+    # 使用 os.walk 通常比 rglob('*') 在大型目錄下更快，且更容易控制深度
+    for root, dirs, filenames in os.walk(directory):
+        root_path = Path(root)
         try:
-            rel = f.relative_to(directory)
-            depth = len(rel.parts) - 1
+            rel = root_path.relative_to(directory)
+            depth = len(rel.parts)
             
-            # 深度檢查
+            # 深度檢查 (max_depth=0 代表只看根目錄)
             if max_depth is not None and depth > max_depth:
+                dirs[:] = [] # 停止繼續往下走
                 continue
                 
-            # 過濾隱藏與專案內部目錄
-            if any(is_ignored(part) for part in rel.parts):
-                continue
-                
+            # 過濾隱藏與專案內部目錄 (修改 dirs 陣列會影響 os.walk 的後續遍歷)
+            dirs[:] = [d for d in dirs if not is_ignored(d)]
+            
         except ValueError:
             continue
-            
-        if f.suffix.lower() not in supported_formats:
-            continue
-            
-        # 大小過濾
-        try:
-            file_size = f.stat().st_size
-            if min_size_bytes is not None and file_size < min_size_bytes:
+
+        for filename in filenames:
+            f = root_path / filename
+            if f.suffix.lower() not in supported_formats:
                 continue
-            if max_size_bytes is not None and file_size > max_size_bytes:
-                continue
-        except Exception:
-            # 檔案讀取失敗的就放生
-            continue
             
-        files.append(f)
+            # 大小過濾
+            try:
+                file_size = f.stat().st_size
+                if min_size_bytes is not None and file_size < min_size_bytes:
+                    continue
+                if max_size_bytes is not None and file_size > max_size_bytes:
+                    continue
+            except Exception:
+                continue
+                
+            files.append(f)
         
     return files
 
@@ -265,6 +271,10 @@ def print_summary(
         saved_color = "bold green" if saved > 0 else "bold red"
         space_table.add_row(f"[{saved_color}]實際節省空間[/{saved_color}]", f"[{saved_color}]{format_size(saved)} ({pct:.1f}%)[/{saved_color}]")
         
+        if summary.success > 0:
+            avg_saved = saved / summary.success
+            space_table.add_row("平均每張節省", format_size(int(avg_saved)))
+
         console.print(space_table)
 
 
@@ -313,4 +323,96 @@ def validate_quality(quality: int) -> bool:
         console.print("[bold red]錯誤：壓縮品質 quality 必須在 1-100 之間。[/bold red]")
         return False
     return True
+
+
+# --- 新增：圖片處理核心邏輯 ---
+
+def get_exif_data(img: Image.Image) -> bytes | None:
+    """取得圖片的 EXIF 資料"""
+    try:
+        return img.info.get('exif')
+    except Exception:
+        return None
+
+def process_image_core(
+    filepath: Path,
+    target_path: Path,
+    quality: int,
+    keep_exif: bool = True,
+    scale: float = 1.0,
+    output_format: str | None = None, # None = 自動偵測
+    lossless: bool = False,
+    skip_if_larger: bool = True,
+    force_convert_from: set[str] | None = None
+) -> FileResult:
+    """
+    圖片處理核心邏輯：
+    1. 開啟與縮放
+    2. 色彩空間轉換 (CMYK/P -> RGB)
+    3. 提取 EXIF
+    4. 儲存至緩衝區檢查大小
+    5. 決定是否寫入硬碟
+    """
+    try:
+        original_size = filepath.stat().st_size
+        img = Image.open(filepath)
+        
+        # 縮放處理
+        if 0.1 <= scale < 1.0:
+            new_width = max(1, int(img.width * scale))
+            new_height = max(1, int(img.height * scale))
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+        exif_data = get_exif_data(img) if keep_exif else None
+        
+        # 色彩模式標準化
+        if img.mode in ('CMYK', 'P', 'RGBA') and output_format in ('JPEG', 'JPG'):
+             img = img.convert('RGB')
+        elif img.mode in ('CMYK', 'P') and output_format == 'WEBP':
+             img = img.convert('RGB')
+
+        # 準備儲存參數
+        save_kwargs = {'optimize': True}
+        if output_format in ('JPEG', 'JPG', 'WEBP'):
+            if not lossless:
+                save_kwargs['quality'] = quality
+        
+        if lossless and output_format == 'WEBP':
+            save_kwargs['lossless'] = True
+            
+        if exif_data:
+            save_kwargs['exif'] = exif_data
+
+        # 決定最終格式
+        if not output_format:
+            fmt_map = {'.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.webp': 'WEBP'}
+            output_format = fmt_map.get(target_path.suffix.lower(), 'JPEG')
+
+        # 先存到記憶體緩衝區檢查大小
+        buf = io.BytesIO()
+        img.save(buf, format=output_format, **save_kwargs)
+        new_size = buf.tell()
+        
+        # 檢查是否越壓越大 (排除特定轉檔需求)
+        orig_ext = filepath.suffix.lower()
+        should_force = force_convert_from and orig_ext in force_convert_from
+        
+        if skip_if_larger and new_size >= original_size and not should_force:
+            return FileResult('size_skip', f"檔案 {filepath.name} 越壓越大，捨棄變更")
+
+        # 確保目錄存在並寫入
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(target_path, 'wb') as f:
+            f.write(buf.getvalue())
+
+        # 保留修改時間
+        orig_stat = filepath.stat()
+        os.utime(target_path, (orig_stat.st_atime, orig_stat.st_mtime))
+
+        return FileResult('success', "OK", original_size, new_size)
+
+    except UnidentifiedImageError:
+        return FileResult('failed', f"無法辨識圖片: {filepath.name}")
+    except Exception as e:
+        return FileResult('failed', f"處理失敗 {filepath.name}: {e}")
 
