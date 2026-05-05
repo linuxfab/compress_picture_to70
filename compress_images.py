@@ -1,5 +1,5 @@
 """
-圖片壓縮工具 v7.0
+圖片壓縮工具 v8.0
 遍歷指定目錄及子目錄，將圖片壓縮後另存新檔
 
 功能:
@@ -13,6 +13,7 @@
 - 跳過無效壓縮格式 (BMP)
 - 支援讀取 Apple 高效無損圖檔 (.HEIC / .AVIF)
 - 支援圖片縮放 (--scale)
+- 支援原地覆蓋 (--in-place)
 """
 
 import os
@@ -46,7 +47,7 @@ def get_exif(image: Image.Image) -> bytes | None:
 def compress_image(
     filepath: Path, root_dir: Path, out_dir: Path | None, 
     quality: int, overwrite: bool, keep_exif: bool, dry_run: bool,
-    skip_if_newer: bool = False, scale: float = 1.0
+    skip_if_newer: bool = False, scale: float = 1.0, in_place: bool = False
 ) -> FileResult:
     """壓縮單張圖片並另存新檔"""
     try:
@@ -57,16 +58,17 @@ def compress_image(
             return FileResult('skipped', f"跳過 BMP (不支援壓縮): {filepath.name}")
 
         # 1. 決定輸出目標的「相對存儲目錄」與「檔名」
-        if out_dir:
+        if in_place:
+            target_path = filepath
+        elif out_dir:
             try:
                 rel_path = filepath.relative_to(root_dir)
             except ValueError:
                 rel_path = Path(filepath.name)
             
-            # 因為已經在別的資料夾，不需要後綴 _70%
             target_path = out_dir / rel_path
         else:
-            # 原地壓縮模式
+            # 原地後綴模式
             if COMPRESSED_SUFFIX_PATTERN.search(filepath.stem):
                 return FileResult('skipped', f"跳過已壓縮: {filepath.name}")
             target_path = filepath.parent / f"{filepath.stem}{suffix}{filepath.suffix}"
@@ -83,7 +85,7 @@ def compress_image(
             if skip_if_newer:
                 if target_path.stat().st_mtime >= filepath.stat().st_mtime:
                     return FileResult('skipped', f"目標檔案較新(跳過): {target_path.name}")
-            elif not overwrite:
+            elif not overwrite and not in_place:
                 return FileResult('skipped', f"檔案已存在(跳過): {target_path.name}")
 
         original_size = filepath.stat().st_size
@@ -197,13 +199,13 @@ def main():
     
     welcome_str = (
         f"📂 [bold cyan]目標歸檔來源[/bold cyan]: {directory}\n"
-        f"📁 [bold magenta]最後存放位置[/bold magenta]: {args.out_dir if args.out_dir else '[原地放置並加後綴字]'}\n"
+        f"📁 [bold magenta]最後存放位置[/bold magenta]: {args.out_dir if args.out_dir else ('[原地覆蓋]' if args.in_place else '[原地放置並加後綴字]')}\n"
         f"⚙️  [bold yellow]壓縮品質[/bold yellow]: {args.quality}%\n"
         f"📐 [bold blue]縮放比例[/bold blue]: {args.scale}\n"
         f"⚖️  [bold yellow]檔案過濾範圍[/bold yellow]: {'不限' if not min_size else format_size(min_size)} ~ {'不限' if not max_size else format_size(max_size)}\n"
         f"🚀 [bold green]並發數量[/bold green]: {args.workers}"
     )
-    console.print(Panel.fit(welcome_str, title="[bold]圖片壓縮工具 v7.0[/bold]"))
+    console.print(Panel.fit(welcome_str, title="[bold]圖片壓縮工具 v8.0[/bold]"))
 
     files = collect_files(
         root_path, SUPPORTED_FORMATS, max_depth=args.max_depth,
@@ -220,6 +222,7 @@ def main():
         dry_run=args.dry_run,
         skip_if_newer=args.skip_if_newer,
         scale=args.scale,
+        in_place=args.in_place,
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="壓縮與格式標準化")
