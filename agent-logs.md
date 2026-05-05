@@ -1,5 +1,13 @@
 # Agent Logs
 
+- 2026-05-05 22:45
+  - 重點: 導入自動旋轉校正 (Auto-Orientation) 與 AVIF 輸出支援
+  - 影響: 
+    - 修改 `utils.py`: 引入 `ImageOps.exif_transpose` 解決手機照片縮放後旋轉角度不正確的問題。
+    - 擴充 `process_image_core`: 支援 `.avif` 格式輸出與其對應的色彩空間轉換邏輯。
+  - 結果: 提升了工具對移動端照片處理的魯棒性，並讓使用者可以選擇更先進的 AVIF 格式以獲得更高的壓縮率。
+  - 更新者: Antigravity Agent
+
 - 2026-05-05 22:35
   - 重點: 解決 Git 同步衝突與清理 `.gitignore` 漏網之魚
   - 影響: 

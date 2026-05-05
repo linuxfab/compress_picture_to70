@@ -22,7 +22,7 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich import box
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 import pillow_heif
 pillow_heif.register_heif_opener()
@@ -363,21 +363,24 @@ def process_image_core(
             new_height = max(1, int(img.height * scale))
             img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
             
+        # 修正 EXIF 旋轉問題 (手機照片必備)
+        img = ImageOps.exif_transpose(img)
+
         exif_data = get_exif_data(img) if keep_exif else None
         
         # 色彩模式標準化
         if img.mode in ('CMYK', 'P', 'RGBA') and output_format in ('JPEG', 'JPG'):
              img = img.convert('RGB')
-        elif img.mode in ('CMYK', 'P') and output_format == 'WEBP':
+        elif img.mode in ('CMYK', 'P') and output_format in ('WEBP', 'AVIF'):
              img = img.convert('RGB')
 
         # 準備儲存參數
         save_kwargs = {'optimize': True}
-        if output_format in ('JPEG', 'JPG', 'WEBP'):
+        if output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
             if not lossless:
                 save_kwargs['quality'] = quality
         
-        if lossless and output_format == 'WEBP':
+        if lossless and output_format in ('WEBP', 'AVIF'):
             save_kwargs['lossless'] = True
             
         if exif_data:
@@ -385,7 +388,7 @@ def process_image_core(
 
         # 決定最終格式
         if not output_format:
-            fmt_map = {'.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.webp': 'WEBP'}
+            fmt_map = {'.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.webp': 'WEBP', '.avif': 'AVIF'}
             output_format = fmt_map.get(target_path.suffix.lower(), 'JPEG')
 
         # 先存到記憶體緩衝區檢查大小
