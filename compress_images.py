@@ -1,5 +1,5 @@
 """
-圖片壓縮工具 v6.0
+圖片壓縮工具 v7.0
 遍歷指定目錄及子目錄，將圖片壓縮後另存新檔
 
 功能:
@@ -12,6 +12,7 @@
 - 支援深度控制 (--max-depth) 以及 尺寸過濾 (--min-size, --max-size)
 - 跳過無效壓縮格式 (BMP)
 - 支援讀取 Apple 高效無損圖檔 (.HEIC / .AVIF)
+- 支援圖片縮放 (--scale)
 """
 
 import os
@@ -45,7 +46,7 @@ def get_exif(image: Image.Image) -> bytes | None:
 def compress_image(
     filepath: Path, root_dir: Path, out_dir: Path | None, 
     quality: int, overwrite: bool, keep_exif: bool, dry_run: bool,
-    skip_if_newer: bool = False
+    skip_if_newer: bool = False, scale: float = 1.0
 ) -> FileResult:
     """壓縮單張圖片並另存新檔"""
     try:
@@ -95,6 +96,13 @@ def compress_image(
 
         # 3. 開啟圖片並抽取 EXIF
         img = Image.open(filepath)
+
+        # 圖片縮放處理
+        if 0.1 <= scale < 1.0:
+            new_width = max(1, int(img.width * scale))
+            new_height = max(1, int(img.height * scale))
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
         exif_data = get_exif(img) if keep_exif else None
         save_kwargs = {'optimize': True}
 
@@ -191,10 +199,11 @@ def main():
         f"📂 [bold cyan]目標歸檔來源[/bold cyan]: {directory}\n"
         f"📁 [bold magenta]最後存放位置[/bold magenta]: {args.out_dir if args.out_dir else '[原地放置並加後綴字]'}\n"
         f"⚙️  [bold yellow]壓縮品質[/bold yellow]: {args.quality}%\n"
+        f"📐 [bold blue]縮放比例[/bold blue]: {args.scale}\n"
         f"⚖️  [bold yellow]檔案過濾範圍[/bold yellow]: {'不限' if not min_size else format_size(min_size)} ~ {'不限' if not max_size else format_size(max_size)}\n"
         f"🚀 [bold green]並發數量[/bold green]: {args.workers}"
     )
-    console.print(Panel.fit(welcome_str, title="[bold]圖片壓縮工具 v6.0[/bold]"))
+    console.print(Panel.fit(welcome_str, title="[bold]圖片壓縮工具 v7.0[/bold]"))
 
     files = collect_files(
         root_path, SUPPORTED_FORMATS, max_depth=args.max_depth,
@@ -210,6 +219,7 @@ def main():
         keep_exif=args.keep_exif,
         dry_run=args.dry_run,
         skip_if_newer=args.skip_if_newer,
+        scale=args.scale,
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="壓縮與格式標準化")

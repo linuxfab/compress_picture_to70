@@ -1,8 +1,9 @@
 """
-圖片轉 WebP 工具 v5.0
+圖片轉 WebP 工具 v6.0
 遍歷指定目錄及子目錄，將所有格式圖片 (含 HEIC / AVIF 等特規檔)
 轉換為 WebP 格式並保留目錄結構。
 可自由指定 `--out-dir` 與 尺寸過濾 (--min-size, --max-size)。
+支援圖片縮放 (--scale)。
 """
 
 import os
@@ -36,7 +37,7 @@ def get_exif(image: Image.Image) -> bytes | None:
 def convert_to_webp(
     filepath: Path, root_dir: Path, target_root: Path, quality: int, 
     overwrite: bool, dry_run: bool, lossless: bool, keep_exif: bool,
-    skip_if_newer: bool = False
+    skip_if_newer: bool = False, scale: float = 1.0
 ) -> FileResult:
     """將單張圖片轉換為 WebP 並另存新檔"""
     try:
@@ -70,6 +71,13 @@ def convert_to_webp(
             target_path.parent.mkdir(parents=True, exist_ok=True)
 
         img = Image.open(filepath)
+
+        # 圖片縮放處理
+        if 0.1 <= scale < 1.0:
+            new_width = max(1, int(img.width * scale))
+            new_height = max(1, int(img.height * scale))
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
         exif_data = get_exif(img) if keep_exif else None
         
         # 轉換不支援的色彩模式
@@ -145,10 +153,11 @@ def main():
         f"📂 [bold cyan]來源掃描目錄[/bold cyan]: {directory}\n"
         f"📁 [bold magenta]鏡像輸出位置[/bold magenta]: {out_dir_path}\n"
         f"⚙️  [bold yellow]WebP 模式[/bold yellow]: {'Lossless (無損)' if args.lossless else f'Lossy (品質 {args.quality}%)'}\n"
+        f"📐 [bold blue]縮放比例[/bold blue]: {args.scale}\n"
         f"⚖️  [bold yellow]過濾範圍[/bold yellow]: {'不限' if not min_size else format_size(min_size)} ~ {'不限' if not max_size else format_size(max_size)}\n"
         f"🚀 [bold green]並發數量[/bold green]: {args.workers} 行程"
     )
-    console.print(Panel.fit(welcome_str, title="[bold]圖片轉 WebP 批次工具 v5.0[/bold]"))
+    console.print(Panel.fit(welcome_str, title="[bold]圖片轉 WebP 批次工具 v6.0[/bold]"))
 
     exclude_targets = {out_dir_path.name} if out_dir_path.parent == root_path else set()
     files = collect_files(
@@ -165,7 +174,8 @@ def main():
         dry_run=args.dry_run,
         lossless=args.lossless,
         keep_exif=args.keep_exif,
-        skip_if_newer=args.skip_if_newer
+        skip_if_newer=args.skip_if_newer,
+        scale=args.scale
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="跨格式轉換")

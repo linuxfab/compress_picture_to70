@@ -1,5 +1,25 @@
 # Agent Logs
 
+- 2026-05-05 16:44
+  - 重點: 實作圖片縮放功能 (`--scale`)
+  - 影響: 
+    - 修改 `utils.py`: 在共用 parser 中加入 `--scale` 參數。
+    - 修改 `compress_images.py` (v7.0): 在 `compress_image` 中實作縮放邏輯 (LANCZOS)。
+    - 修改 `images_to_webp.py` (v6.0): 在 `convert_to_webp` 中實作縮放邏輯。
+    - 更新 `README.md`: 加入縮放功能使用範例。
+  - 結果: 使用者現在可以使用 `--scale 0.5` 輕鬆將圖片解析度減半，進一步節省儲存空間。
+  - 更新者: Antigravity Agent
+
+
+- 2026-05-05 16:42
+  - 重點: README 文件優化與版本資訊校正
+  - 影響: 
+    - 修改 `README.md`: 移除末尾重複的架構說明與作者資訊，更新 `compress-img` 版本至 v6.0，統一最後更新時間。
+    - 修正 `agent-logs.md`: 依照規定格式插入本次更新紀錄。
+  - 結果: 文件結構更清晰，消滅了冗餘內容，且版本號與實際程式碼 v6.0 保持一致。
+  - 更新者: Antigravity Agent
+
+
 - 2026-05-03 10:31
   - 重點: 同步變更至 GitHub
   - 影響: 
