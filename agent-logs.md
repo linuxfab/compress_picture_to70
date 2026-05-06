@@ -1,5 +1,14 @@
 # Agent Logs
 
+- 2026-05-06 20:28
+  - 重點: 修復 P0/P1/P2 問題 (Bug修復、健壯性、代碼品質)
+  - 影響: 
+    - `utils.py`: 修正 EXIF 旋轉順序錯誤、新增 Exception 攔截以防止 `future.result()` 異常崩潰、修復 Image file handle 洩漏、新增 `--verbose` 參數與全域版本號。
+    - `compress_images.py` 與 `images_to_webp.py`: 移除未使用的 `import os`，新增 `--scale` 參數驗證、加入大小參數解析的 ValueError 處理。`images_to_webp.py` 的 `--in-place` 在刪除原檔前加入寫入成功檢查。
+    - `tests/test_image_logic.py`: 修正 mock 行為以匹配 `ImageOps.exif_transpose` 改動。
+  - 結果: 提升了工具的穩定性與健壯性，防止批次執行時因異常中斷，並修正了潛在的檔案遺失風險。
+  - 更新者: Antigravity Agent
+
 - 2026-05-05 22:45
   - 重點: 導入自動旋轉校正 (Auto-Orientation) 與 AVIF 輸出支援
   - 影響: 

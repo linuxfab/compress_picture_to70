@@ -11,8 +11,10 @@ import io
 from dataclasses import dataclass
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import Callable, Any, Iterable, Protocol
+from typing import Callable, Iterable
 import argparse
+
+__version__ = "8.1.1"
 
 # 引入 Rich 函式庫做終端機視覺化美化
 from rich.console import Console
@@ -92,8 +94,7 @@ def parse_size_to_bytes(size_str: str | None) -> int | None:
         
     match = re.match(r'^([\d\.]+)\s*([a-zA-Z]*)$', size_str.strip())
     if not match:
-        console.print(f"[bold red]解析檔案大小參數錯誤: {size_str}，請使用如 500KB, 2MB 等格式[/bold red]")
-        exit(1)
+        raise ValueError(f"解析檔案大小參數錯誤: {size_str}，請使用如 500KB, 2MB 等格式")
         
     number = float(match.group(1))
     unit = match.group(2).upper()
@@ -107,8 +108,7 @@ def parse_size_to_bytes(size_str: str | None) -> int | None:
     elif unit in ('B', 'BYTE', 'BYTES'):
         return int(number)
     else:
-        console.print(f"[bold red]未知的單位: {unit}[/bold red]")
-        exit(1)
+        raise ValueError(f"未知的單位: {unit}")
 
 
 def collect_files(
@@ -205,7 +205,11 @@ def run_pipeline(
             futures = {executor.submit(worker_fn, f): f for f in files}
 
             for future in as_completed(futures):
-                result = future.result()
+                try:
+                    result = future.result()
+                except Exception as e:
+                    filepath = futures[future]
+                    result = FileResult('failed', f"子程序異常 {filepath.name}: {e}")
                 
                 # 如果失敗，將紅色的 Alert 印在進度條上方而不破壞版面
                 if result.status == 'failed':
@@ -290,6 +294,8 @@ def create_base_parser(description: str, epilog: str) -> argparse.ArgumentParser
                         help='輸出目錄 (留空則覆寫於原始資料夾旁，若指定則建立不落地的鏡像目錄)')
     parser.add_argument('-w', '--workers', type=int, default=4,
                         help='並行處理程序的數量 (預設: 4)')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='顯示詳細除錯資訊')
     parser.add_argument('-n', '--dry-run', action='store_true',
                         help='預覽模式：僅列出待處理檔案，不實際處理')
     parser.add_argument('-d', '--max-depth', type=int, default=None,
@@ -355,18 +361,19 @@ def process_image_core(
     """
     try:
         original_size = filepath.stat().st_size
-        img = Image.open(filepath)
-        
-        # 縮放處理
-        if 0.1 <= scale < 1.0:
-            new_width = max(1, int(img.width * scale))
-            new_height = max(1, int(img.height * scale))
-            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        with Image.open(filepath) as img:
+            img.load()  # 強制讀入記憶體，釋放 file handle
             
-        # 修正 EXIF 旋轉問題 (手機照片必備)
-        img = ImageOps.exif_transpose(img)
+            # 修正 EXIF 旋轉問題 (手機照片必備) - 必須在 resize 前
+            img = ImageOps.exif_transpose(img)
 
-        exif_data = get_exif_data(img) if keep_exif else None
+            # 縮放處理
+            if 0.1 <= scale < 1.0:
+                new_width = max(1, int(img.width * scale))
+                new_height = max(1, int(img.height * scale))
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            exif_data = get_exif_data(img) if keep_exif else None
         
         # 色彩模式標準化
         if img.mode in ('CMYK', 'P', 'RGBA') and output_format in ('JPEG', 'JPG'):

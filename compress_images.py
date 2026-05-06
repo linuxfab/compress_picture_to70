@@ -1,9 +1,8 @@
 """
-圖片壓縮工具 v8.1
+圖片壓縮工具
 遍歷指定目錄及子目錄，將圖片壓縮後另存新檔
 """
 
-import os
 from pathlib import Path
 from functools import partial
 
@@ -11,7 +10,8 @@ from utils import (
     FileResult, collect_files, run_pipeline, print_summary,
     create_base_parser, resolve_directory, validate_quality,
     parse_size_to_bytes, format_size, setup_logger, console,
-    SUPPORTED_FORMATS, COMPRESSED_SUFFIX_PATTERN, process_image_core
+    SUPPORTED_FORMATS, COMPRESSED_SUFFIX_PATTERN, process_image_core,
+    __version__
 )
 
 def compress_image(
@@ -74,8 +74,6 @@ def compress_image(
 
 
 def main():
-    setup_logger()
-    
     parser = create_base_parser(
         description='圖片批量壓縮工具 (支援 HEIC 讀取與尺寸過濾)',
         epilog='範例: python compress_images.py "D:\\Photos" -O "E:\\Photos_Zip" -q 50'
@@ -85,12 +83,22 @@ def main():
     parser.add_argument('-e', '--keep-exif', action='store_true', help='保留 EXIF 資訊')
 
     args = parser.parse_args()
+    setup_logger(verbose=args.verbose)
+    
+    if not 0.1 <= args.scale <= 1.0:
+        console.print("[bold red]錯誤：--scale 必須在 0.1-1.0 之間[/bold red]")
+        return
+        
     directory = resolve_directory(args)
     if not directory or not validate_quality(args.quality):
         return
 
-    min_size = parse_size_to_bytes(args.min_size)
-    max_size = parse_size_to_bytes(args.max_size)
+    try:
+        min_size = parse_size_to_bytes(args.min_size)
+        max_size = parse_size_to_bytes(args.max_size)
+    except ValueError as e:
+        console.print(f"[bold red]{e}[/bold red]")
+        return
     root_path = Path(directory)
     out_dir_path = Path(args.out_dir) if args.out_dir else None
 
@@ -100,7 +108,7 @@ def main():
         f"📁 [bold magenta]輸出位置[/bold magenta]: {args.out_dir if args.out_dir else ('[原地覆蓋]' if args.in_place else '[原地後綴]')}\n"
         f"⚙️  [bold yellow]品質[/bold yellow]: {args.quality}% | [bold green]並發[/bold green]: {args.workers}"
     )
-    console.print(Panel.fit(welcome_str, title="[bold]圖片壓縮工具 v8.1[/bold]"))
+    console.print(Panel.fit(welcome_str, title=f"[bold]圖片壓縮工具 v{__version__}[/bold]"))
 
     files = collect_files(
         root_path, SUPPORTED_FORMATS, max_depth=args.max_depth,

@@ -1,9 +1,8 @@
 """
-圖片轉 WebP 工具 v7.1
+圖片轉 WebP 工具
 遍歷指定目錄及子目錄，將圖片轉換為 WebP 格式
 """
 
-import os
 from pathlib import Path
 from functools import partial
 
@@ -11,7 +10,7 @@ from utils import (
     FileResult, collect_files, run_pipeline, print_summary,
     create_base_parser, resolve_directory, validate_quality,
     parse_size_to_bytes, format_size, setup_logger, console,
-    SUPPORTED_FORMATS, process_image_core
+    SUPPORTED_FORMATS, process_image_core, __version__
 )
 from rich.panel import Panel
 
@@ -50,7 +49,10 @@ def convert_to_webp(
         )
 
         if result.status == 'success' and in_place and not dry_run:
-            filepath.unlink()
+            if target_path.exists() and target_path.stat().st_size > 0:
+                filepath.unlink()
+            else:
+                return FileResult('failed', f"轉換後檔案異常，保留原檔: {filepath.name}")
 
         return result
 
@@ -59,8 +61,6 @@ def convert_to_webp(
 
 
 def main():
-    setup_logger()
-    
     parser = create_base_parser(
         description='圖片轉 WebP 工具 (支援 HEIC 與尺寸過濾)',
         epilog='範例: python images_to_webp.py "D:\\Photos" --lossless'
@@ -71,12 +71,22 @@ def main():
     parser.add_argument('-e', '--keep-exif', action='store_true', help='保留 EXIF')
 
     args = parser.parse_args()
+    setup_logger(verbose=args.verbose)
+    
+    if not 0.1 <= args.scale <= 1.0:
+        console.print("[bold red]錯誤：--scale 必須在 0.1-1.0 之間[/bold red]")
+        return
+        
     directory = resolve_directory(args)
     if not directory or not (args.lossless or validate_quality(args.quality)):
         return
 
-    min_size = parse_size_to_bytes(args.min_size)
-    max_size = parse_size_to_bytes(args.max_size)
+    try:
+        min_size = parse_size_to_bytes(args.min_size)
+        max_size = parse_size_to_bytes(args.max_size)
+    except ValueError as e:
+        console.print(f"[bold red]{e}[/bold red]")
+        return
     root_path = Path(directory)
     out_dir_path = Path(args.out_dir) if args.out_dir else root_path / "webp_output"
 
@@ -85,7 +95,7 @@ def main():
         f"📁 [bold magenta]輸出位置[/bold magenta]: {out_dir_path if not args.in_place else '[原地轉換並刪除原檔]'}\n"
         f"⚙️  [bold yellow]模式[/bold yellow]: {'無損' if args.lossless else f'有損 ({args.quality}%)'} | [bold green]並發[/bold green]: {args.workers}"
     )
-    console.print(Panel.fit(welcome_str, title="[bold]圖片轉 WebP 工具 v7.1[/bold]"))
+    console.print(Panel.fit(welcome_str, title=f"[bold]圖片轉 WebP 工具 v{__version__}[/bold]"))
 
     exclude_targets = {out_dir_path.name} if out_dir_path.parent == root_path else set()
     files = collect_files(

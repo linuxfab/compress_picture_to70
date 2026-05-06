@@ -15,9 +15,11 @@ class TestImageLogic(unittest.TestCase):
     @patch("utils.os.utime")
     @patch("utils.open", new_callable=mock_open)
     @patch("utils.Path.mkdir")
-    def test_process_image_core_success(self, mock_mkdir, mock_file_open, mock_utime, mock_stat, mock_image_open):
+    @patch("utils.ImageOps.exif_transpose")
+    def test_process_image_core_success(self, mock_exif, mock_mkdir, mock_file_open, mock_utime, mock_stat, mock_image_open):
         # 模擬圖片
         mock_img = MagicMock()
+        mock_exif.return_value = mock_img
         mock_img.info = {}
         mock_img.mode = 'RGB'
         mock_img.width = 100
@@ -54,8 +56,10 @@ class TestImageLogic(unittest.TestCase):
 
     @patch("utils.Image.open")
     @patch("utils.Path.stat")
-    def test_process_image_core_size_skip(self, mock_stat, mock_image_open):
+    @patch("utils.ImageOps.exif_transpose")
+    def test_process_image_core_size_skip(self, mock_exif, mock_stat, mock_image_open):
         mock_img = MagicMock()
+        mock_exif.return_value = mock_img
         mock_img.info = {}
         mock_img.mode = 'RGB'
         mock_image_open.return_value = mock_img
