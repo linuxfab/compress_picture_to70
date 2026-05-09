@@ -1,5 +1,14 @@
 # Agent Logs
 
+- 2026-05-09 13:17
+  - 重點: 優化檔案大小過濾的透明度與回報機制
+  - 影響: 
+    - `utils.py`: 將 `collect_files` 中的大小過濾邏輯移除，改為收集所有符合格式的檔案。
+    - `compress_images.py`: 在 `compress_image`  worker 中實作大小過濾，並回傳 `skipped` 狀態。
+    - `images_to_webp.py`: 在 `convert_to_webp` worker 中實作大小過濾，並回傳 `skipped` 狀態。
+  - 結果: 解決了當使用者設定 `-m` 參數且所有檔案皆未達標時，工具回報 0 個檔案的困惑感。現在這些檔案會正確計入「跳過」數量，讓使用者明確知道過濾器正在運作。
+  - 更新者: Antigravity Agent
+
 - 2026-05-09 13:10
   - 重點: 擴充 CLI 指令別名，解決 "program not found" 問題
   - 影響: 

@@ -17,10 +17,20 @@ from rich.panel import Panel
 def convert_to_webp(
     filepath: Path, root_dir: Path, target_root: Path, quality: int, 
     overwrite: bool, dry_run: bool, lossless: bool, keep_exif: bool,
-    skip_if_newer: bool = False, scale: float = 1.0, in_place: bool = False
+    skip_if_newer: bool = False, scale: float = 1.0, in_place: bool = False,
+    min_size_bytes: int | None = None, max_size_bytes: int | None = None
 ) -> FileResult:
     """將單張圖片轉換為 WebP 並另存新檔"""
     try:
+        # 0. 大小過濾
+        try:
+            file_size = filepath.stat().st_size
+            if min_size_bytes is not None and file_size < min_size_bytes:
+                return FileResult('skipped', f"跳過 (太小): {filepath.name} ({format_size(file_size)})")
+            if max_size_bytes is not None and file_size > max_size_bytes:
+                return FileResult('skipped', f"跳過 (太大): {filepath.name} ({format_size(file_size)})")
+        except Exception as e:
+            return FileResult('failed', f"讀取檔案大小失敗 {filepath.name}: {e}")
         try:
             rel_path = filepath.relative_to(root_dir)
         except ValueError:
@@ -100,14 +110,15 @@ def main():
     exclude_targets = {out_dir_path.name} if out_dir_path.parent == root_path else set()
     files = collect_files(
         root_path, SUPPORTED_FORMATS, exclude_dirs=exclude_targets, 
-        max_depth=args.max_depth, min_size_bytes=min_size, max_size_bytes=max_size
+        max_depth=args.max_depth
     )
 
     worker = partial(
         convert_to_webp, root_dir=root_path, target_root=out_dir_path,
         quality=args.quality, overwrite=args.overwrite, dry_run=args.dry_run,
         lossless=args.lossless, keep_exif=args.keep_exif, skip_if_newer=args.skip_if_newer,
-        scale=args.scale, in_place=args.in_place
+        scale=args.scale, in_place=args.in_place,
+        min_size_bytes=min_size, max_size_bytes=max_size
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="跨格式轉換")

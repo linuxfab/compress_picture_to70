@@ -116,10 +116,8 @@ def collect_files(
     supported_formats: Iterable[str],
     exclude_dirs: set[str] | None = None,
     max_depth: int | None = None,
-    min_size_bytes: int | None = None,
-    max_size_bytes: int | None = None,
 ) -> list[Path]:
-    """收集目錄及子目錄中所有符合格式及大小的檔案，並自動濾除系統隱藏及專案目錄"""
+    """收集目錄及子目錄中所有符合格式的檔案，並自動濾除系統隱藏及專案目錄"""
     files: list[Path] = []
     
     if exclude_dirs is None:
@@ -152,16 +150,6 @@ def collect_files(
             if f.suffix.lower() not in supported_formats:
                 continue
             
-            # 大小過濾
-            try:
-                file_size = f.stat().st_size
-                if min_size_bytes is not None and file_size < min_size_bytes:
-                    continue
-                if max_size_bytes is not None and file_size > max_size_bytes:
-                    continue
-            except Exception:
-                continue
-                
             files.append(f)
         
     return files

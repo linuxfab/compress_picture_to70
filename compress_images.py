@@ -17,7 +17,8 @@ from utils import (
 def compress_image(
     filepath: Path, root_dir: Path, out_dir: Path | None, 
     quality: int, overwrite: bool, keep_exif: bool, dry_run: bool,
-    skip_if_newer: bool = False, scale: float = 1.0, in_place: bool = False
+    skip_if_newer: bool = False, scale: float = 1.0, in_place: bool = False,
+    min_size_bytes: int | None = None, max_size_bytes: int | None = None
 ) -> FileResult:
     """壓縮單張圖片並另存新檔"""
     try:
@@ -26,6 +27,16 @@ def compress_image(
         # BMP 直接跳過 (雖然 PIL 支援，但通常壓縮效果差)
         if filepath.suffix.lower() == '.bmp':
             return FileResult('skipped', f"跳過 BMP: {filepath.name}")
+
+        # 0. 大小過濾
+        try:
+            file_size = filepath.stat().st_size
+            if min_size_bytes is not None and file_size < min_size_bytes:
+                return FileResult('skipped', f"跳過 (太小): {filepath.name} ({format_size(file_size)})")
+            if max_size_bytes is not None and file_size > max_size_bytes:
+                return FileResult('skipped', f"跳過 (太大): {filepath.name} ({format_size(file_size)})")
+        except Exception as e:
+            return FileResult('failed', f"讀取檔案大小失敗 {filepath.name}: {e}")
 
         # 1. 決定輸出目標的「相對存儲目錄」與「檔名」
         if in_place:
@@ -111,14 +122,14 @@ def main():
     console.print(Panel.fit(welcome_str, title=f"[bold]圖片壓縮工具 v{__version__}[/bold]"))
 
     files = collect_files(
-        root_path, SUPPORTED_FORMATS, max_depth=args.max_depth,
-        min_size_bytes=min_size, max_size_bytes=max_size
+        root_path, SUPPORTED_FORMATS, max_depth=args.max_depth
     )
 
     worker = partial(
         compress_image, root_dir=root_path, out_dir=out_dir_path,
         quality=args.quality, overwrite=args.overwrite, keep_exif=args.keep_exif,
-        dry_run=args.dry_run, skip_if_newer=args.skip_if_newer, scale=args.scale, in_place=args.in_place
+        dry_run=args.dry_run, skip_if_newer=args.skip_if_newer, scale=args.scale, in_place=args.in_place,
+        min_size_bytes=min_size, max_size_bytes=max_size
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="壓縮與格式化")
