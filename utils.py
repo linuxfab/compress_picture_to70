@@ -8,13 +8,15 @@ import logging
 import re
 import os
 import io
-from dataclasses import dataclass
+import time
+import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable, Iterable
 import argparse
 
-__version__ = "8.1.1"
+__version__ = "8.2.0"
 
 # 引入 Rich 函式庫做終端機視覺化美化
 from rich.console import Console
@@ -71,6 +73,7 @@ class ProcessingSummary:
     size_skip: int = 0
     total_original: int = 0
     total_new: int = 0
+    elapsed_seconds: float = 0.0
 
 
 def format_size(size_bytes: int) -> str:
@@ -176,6 +179,8 @@ def run_pipeline(
     else:
         console.print(f"[bold green]找到 {total} 張圖片，開始進行 {label}...[/bold green]\n")
 
+    t_start = time.perf_counter()
+
     # 使用 Rich 來渲染動態進度條
     with Progress(
         SpinnerColumn(),
@@ -189,39 +194,56 @@ def run_pipeline(
         task_id = progress.add_task(f" [cyan]{label}中...", total=total)
 
         # 啟動並行處理 (ProcessPoolExecutor 加速 CPU bound)
-        with ProcessPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(worker_fn, f): f for f in files}
+        try:
+            with ProcessPoolExecutor(max_workers=workers) as executor:
+                futures = {executor.submit(worker_fn, f): f for f in files}
 
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                except Exception as e:
-                    filepath = futures[future]
-                    result = FileResult('failed', f"子程序異常 {filepath.name}: {e}")
-                
-                # 如果失敗，將紅色的 Alert 印在進度條上方而不破壞版面
-                if result.status == 'failed':
-                    progress.console.print(f"[bold red]{result.message}[/bold red]")
-                # DRY RUN 模式要把每條紀錄印出來
-                elif result.status == 'dry_run':
-                    progress.console.print(f"[dim]{result.message}[/dim]")
+                for future in as_completed(futures):
+                    try:
+                        result = future.result()
+                    except Exception as e:
+                        filepath = futures[future]
+                        result = FileResult('failed', f"子程序異常 {filepath.name}: {e}")
+                    
+                    # 如果失敗，將紅色的 Alert 印在進度條上方而不破壞版面
+                    if result.status == 'failed':
+                        progress.console.print(f"[bold red]{result.message}[/bold red]")
+                    # DRY RUN 模式要把每條紀錄印出來
+                    elif result.status == 'dry_run':
+                        progress.console.print(f"[dim]{result.message}[/dim]")
 
-                # 統計
-                if result.status == 'success':
-                    summary.success += 1
-                    summary.total_original += result.original_size
-                    summary.total_new += result.new_size
-                elif result.status in ('skipped', 'dry_run'):
-                    summary.skipped += 1
-                elif result.status == 'size_skip':
-                    summary.size_skip += 1
-                else:
-                    summary.failed += 1
-                
-                # 更新進度表
-                progress.advance(task_id)
+                    # 統計
+                    if result.status == 'success':
+                        summary.success += 1
+                        summary.total_original += result.original_size
+                        summary.total_new += result.new_size
+                    elif result.status in ('skipped', 'dry_run'):
+                        summary.skipped += 1
+                    elif result.status == 'size_skip':
+                        summary.size_skip += 1
+                    else:
+                        summary.failed += 1
+                    
+                    # 更新進度表
+                    progress.advance(task_id)
+        except KeyboardInterrupt:
+            progress.console.print("\n[bold yellow]⚠️  使用者中斷 (Ctrl+C)，正在停止...[/bold yellow]")
 
+    summary.elapsed_seconds = time.perf_counter() - t_start
     return summary
+
+
+def _format_elapsed(seconds: float) -> str:
+    """將秒數格式化為人類可讀的時間字串"""
+    if seconds < 60:
+        return f"{seconds:.1f} 秒"
+    elif seconds < 3600:
+        m, s = divmod(seconds, 60)
+        return f"{int(m)} 分 {s:.0f} 秒"
+    else:
+        h, remainder = divmod(seconds, 3600)
+        m, s = divmod(remainder, 60)
+        return f"{int(h)} 時 {int(m)} 分 {s:.0f} 秒"
 
 
 def print_summary(
@@ -245,6 +267,10 @@ def print_summary(
     fail_color = "red" if summary.failed > 0 else "white"
     status_table.add_row(f"[{fail_color}]失敗[/{fail_color}]", f"[{fail_color}]{str(summary.failed)}[/{fail_color}]")
     
+    # 總執行時間
+    if summary.elapsed_seconds > 0:
+        status_table.add_row("⏱️  總執行時間", _format_elapsed(summary.elapsed_seconds))
+
     console.print(status_table)
 
     # 儲存空間統計表格
@@ -280,8 +306,9 @@ def create_base_parser(description: str, epilog: str) -> argparse.ArgumentParser
     parser.add_argument('directory', nargs='?', help='目標目錄路徑 (來源資料夾)')
     parser.add_argument('-O', '--out-dir', type=str, default=None,
                         help='輸出目錄 (留空則覆寫於原始資料夾旁，若指定則建立不落地的鏡像目錄)')
-    parser.add_argument('-w', '--workers', type=int, default=4,
-                        help='並行處理程序的數量 (預設: 4)')
+    default_workers = min(os.cpu_count() or 4, 8)
+    parser.add_argument('-w', '--workers', type=int, default=default_workers,
+                        help=f'並行處理程序的數量 (預設: {default_workers}，自動偵測 CPU 核心數)')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='顯示詳細除錯資訊')
     parser.add_argument('-n', '--dry-run', action='store_true',
@@ -302,12 +329,20 @@ def create_base_parser(description: str, epilog: str) -> argparse.ArgumentParser
 
 
 def resolve_directory(args: argparse.Namespace) -> str | None:
-    """解析目錄路徑 (支援互動模式)，回傳 None 表示使用者未輸入"""
+    """解析目錄路徑 (支援互動模式)，回傳 None 表示使用者未輸入或路徑無效"""
     if not args.directory:
         args.directory = input("請輸入目標來源目錄路徑：").strip()
         if not args.directory:
             console.print("[bold red]未輸入目錄，程式結束。[/bold red]")
             return None
+    
+    target = Path(args.directory)
+    if not target.exists():
+        console.print(f"[bold red]錯誤：路徑不存在 → {target}[/bold red]")
+        return None
+    if not target.is_dir():
+        console.print(f"[bold red]錯誤：指定的路徑不是一個目錄 → {target}[/bold red]")
+        return None
     return str(args.directory)
 
 
@@ -400,10 +435,24 @@ def process_image_core(
         if skip_if_larger and new_size >= original_size and not should_force:
             return FileResult('size_skip', f"檔案 {filepath.name} 越壓越大，捨棄變更")
 
-        # 確保目錄存在並寫入
+        # 確保目錄存在
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(target_path, 'wb') as f:
-            f.write(buf.getvalue())
+
+        # 原子寫入：先寫暫存檔，再 rename，防止寫入中途斷電毀損原檔
+        try:
+            fd, tmp_path = tempfile.mkstemp(
+                suffix=target_path.suffix,
+                dir=str(target_path.parent)
+            )
+            with os.fdopen(fd, 'wb') as f:
+                f.write(buf.getvalue())
+            os.replace(tmp_path, str(target_path))
+        except Exception:
+            # 若 rename 失敗，清理暫存檔後 fallback 直寫
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            with open(target_path, 'wb') as f:
+                f.write(buf.getvalue())
 
         # 保留修改時間
         os.utime(target_path, (orig_stat.st_atime, orig_stat.st_mtime))

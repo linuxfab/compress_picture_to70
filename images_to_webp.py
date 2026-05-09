@@ -104,10 +104,19 @@ def main():
     root_path = Path(directory)
     out_dir_path = Path(args.out_dir) if args.out_dir else root_path / "webp_output"
 
+    filter_parts = []
+    if min_size:
+        filter_parts.append(f">= {format_size(min_size)}")
+    if max_size:
+        filter_parts.append(f"<= {format_size(max_size)}")
+    if args.scale < 1.0:
+        filter_parts.append(f"縮放 {args.scale:.0%}")
+    filter_str = f" | [bold red]過濾[/bold red]: {', '.join(filter_parts)}" if filter_parts else ""
+
     welcome_str = (
         f"📂 [bold cyan]來源掃描[/bold cyan]: {directory}\n"
         f"📁 [bold magenta]輸出位置[/bold magenta]: {out_dir_path if not args.in_place else '[原地轉換並刪除原檔]'}\n"
-        f"⚙️  [bold yellow]模式[/bold yellow]: {'無損' if args.lossless else f'有損 ({args.quality}%)'} | [bold green]並發[/bold green]: {args.workers}"
+        f"⚙️  [bold yellow]模式[/bold yellow]: {'無損' if args.lossless else f'有損 ({args.quality}%)'} | [bold green]並發[/bold green]: {args.workers}{filter_str}"
     )
     console.print(Panel.fit(welcome_str, title=f"[bold]圖片轉 WebP 工具 v{__version__}[/bold]"))
 

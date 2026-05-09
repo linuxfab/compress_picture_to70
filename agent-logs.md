@@ -1,5 +1,13 @@
 # Agent Logs
 
+- 2026-05-09 14:38
+  - 重點: v8.2.0 — 六項全面優化 (安全性/UX/效能/健壯性)
+  - 影響: 
+    - `utils.py`: (1) `resolve_directory` 新增路徑存在性與是否為目錄的驗證。(2) `process_image_core` 改用 `tempfile` + `os.replace` 實作原子寫入，防止 `--in-place` 斷電毀損原檔。(3) `run_pipeline` 新增 `KeyboardInterrupt` 攔截與計時。(4) `print_summary` 新增總執行時間列。(5) `--workers` 預設改為自動偵測 CPU 核心數 (上限 8)。版本升至 v8.2.0。
+    - `compress_images.py`, `images_to_webp.py`: Welcome 面板新增過濾條件顯示 (min/max size, scale)。
+  - 結果: 大幅提升工具的安全性 (原子寫入)、可操作性 (路徑驗證, 面板反饋)、效能 (自動核心偵測)、健壯性 (優雅中斷)、以及使用體驗 (執行計時)。
+  - 更新者: Antigravity Agent
+
 - 2026-05-09 14:11
   - 重點: I/O 效能優化 (減少不必要的磁碟存取)
   - 影響: 

@@ -1,14 +1,17 @@
-# 圖片批量壓縮與轉檔工具 v8.1.1 / v7.1.1
+# 圖片批量壓縮與轉檔工具 v8.2.0 / v7.2.0
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
 - 最後更新時間: 2026-05-09
 
 遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。本版本進行了重大重構，大幅提升了效能與代碼品質。
 
-## 最新改進 (v8.1.1)
-- **回報透明化**: 檔案大小過濾邏輯改由 Worker 處理，確保被跳過的檔案會出現在最後的統計報表中。
-- **CLI 別名優化**: 新增 `compress-images` 與 `compress_images` 指令別名。
-- **效能與品質**: 延續 v8.1 的重構，優化大型目錄掃描與記憶體損耗。
+## 最新改進 (v8.2.0)
+- **原子寫入**: `--in-place` 改用 `tempfile` + `os.replace` 實作，寫入中途斷電也不會毀損原檔。
+- **路徑驗證**: 目標路徑不存在或不是目錄時，立即顯示錯誤訊息，不再靜默回傳 0 個檔案。
+- **過濾條件透明化**: Welcome 面板顯示當前生效的 `-m` / `-M` / `--scale` 參數。
+- **自動核心數偵測**: `--workers` 預設值改由 `os.cpu_count()` 自動設定 (上限 8)。
+- **執行計時**: 統計報表新增總執行時間顬示。
+- **優雅中斷**: Ctrl+C 不再噴出 Traceback，而是乾淨停止並顯示已完成的統計。
 
 ## 專案功能
 
@@ -99,7 +102,7 @@ uv run images-to-webp <目錄路徑> [選項]
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
 
 ## 專案結構
-- `utils.py`: 共用核心模組 (v8.1.1 重構版)
+- `utils.py`: 共用核心模組 (v8.2.0 重構版)
 - `compress_images.py`: 圖片壓縮 CLI
 - `images_to_webp.py`: WebP 轉檔 CLI
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
