@@ -227,7 +227,7 @@ def run_pipeline(
                     # 更新進度表
                     progress.advance(task_id)
         except KeyboardInterrupt:
-            progress.console.print("\n[bold yellow]⚠️  使用者中斷 (Ctrl+C)，正在停止...[/bold yellow]")
+            progress.console.print("\n[bold yellow]警告：使用者中斷 (Ctrl+C)，正在停止...[/bold yellow]")
 
     summary.elapsed_seconds = time.perf_counter() - t_start
     return summary
@@ -255,7 +255,7 @@ def print_summary(
     """使用 Rich Table 印出華麗且易讀的分析報告"""
     
     # 執行結果狀態表格
-    status_table = Table(title="\n📊 執行結果分析", box=box.ROUNDED, show_header=True, header_style="bold magenta")
+    status_table = Table(title="\n[分析] 執行結果分析", box=box.ROUNDED, show_header=True, header_style="bold magenta")
     status_table.add_column("狀態", style="dim", width=25)
     status_table.add_column("數量", justify="right", style="bold cyan")
 
@@ -269,7 +269,7 @@ def print_summary(
     
     # 總執行時間
     if summary.elapsed_seconds > 0:
-        status_table.add_row("⏱️  總執行時間", _format_elapsed(summary.elapsed_seconds))
+        status_table.add_row("總執行時間", _format_elapsed(summary.elapsed_seconds))
 
     console.print(status_table)
 
@@ -278,7 +278,7 @@ def print_summary(
         saved = summary.total_original - summary.total_new
         pct = (saved / summary.total_original) * 100
         
-        space_table = Table(title="💾 磁碟空間變化", box=box.MINIMAL_DOUBLE_HEAD)
+        space_table = Table(title="[容量] 磁碟空間變化", box=box.MINIMAL_DOUBLE_HEAD)
         space_table.add_column("對象", style="cyan")
         space_table.add_column("容量大小", justify="right", style="green")
         
@@ -439,6 +439,7 @@ def process_image_core(
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
         # 原子寫入：先寫暫存檔，再 rename，防止寫入中途斷電毀損原檔
+        tmp_path = None
         try:
             fd, tmp_path = tempfile.mkstemp(
                 suffix=target_path.suffix,
@@ -448,9 +449,12 @@ def process_image_core(
                 f.write(buf.getvalue())
             os.replace(tmp_path, str(target_path))
         except Exception:
-            # 若 rename 失敗，清理暫存檔後 fallback 直寫
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+            # 若原子寫入失敗，清理暫存檔後 fallback 直寫
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
             with open(target_path, 'wb') as f:
                 f.write(buf.getvalue())
 
