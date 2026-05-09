@@ -12,6 +12,8 @@ dependencies = [
 
 [project.scripts]
 compress-img = "compress_images:main"
+compress-images = "compress_images:main"
+compress_images = "compress_images:main"
 images-to-webp = "images_to_webp:main"
 
 [build-system]

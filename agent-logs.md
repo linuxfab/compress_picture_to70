@@ -1,5 +1,13 @@
 # Agent Logs
 
+- 2026-05-09 13:10
+  - 重點: 擴充 CLI 指令別名，解決 "program not found" 問題
+  - 影響: 
+    - `pyproject.toml`: 新增 `compress-images` 與 `compress_images` 作為 `compress-img` 的別名。
+  - 結果: 使用者現在可以使用多種指令名稱執行工具，減少因記錯名稱導致的錯誤。
+  - 更新者: Antigravity Agent
+
+
 - 2026-05-09 12:48
   - 重點: 強化 CLI 使用便利性，新增 `-m` / `-M` 檔案大小過濾別名
   - 影響: 
