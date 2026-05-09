@@ -1,7 +1,7 @@
 # 圖片批量壓縮與轉檔工具 v8.1 / v7.1
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
-- 最後更新時間: 2026-05-05
+- 最後更新時間: 2026-05-09
 
 遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。本版本進行了重大重構，大幅提升了效能與代碼品質。
 
@@ -76,8 +76,8 @@ uv run compress-img <目錄路徑> [選項]
 | `-q, --quality` | 壓縮品質 1-100 | 70 |
 | `--scale` | 縮放比例 (0.1-1.0)，如 0.5 為長寬減半 | 1.0 |
 | `--in-place` | 原地覆蓋：直接取代原始檔案 (不加後綴) | 否 |
-| `--min-size` | 最小檔案過濾 (如 500KB, 1MB) | (無) |
-| `--max-size` | 最大檔案過濾 | (無) |
+| `-m, --min-size` | 最小檔案過濾 (如 500KB, 1MB) | (無) |
+| `-M, --max-size` | 最大檔案過濾 | (無) |
 | `-o, --overwrite` | 覆蓋已存在的壓縮檔 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
 | `-w, --workers` | Process 數量 (並行) | 4 |
@@ -119,4 +119,4 @@ MIT
 
 ## Authors
 - [linuxfab](https://github.com/linuxfab)
-- Last Update: 2026-05-05
+- Last Update: 2026-05-09

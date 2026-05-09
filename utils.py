@@ -300,9 +300,9 @@ def create_base_parser(description: str, epilog: str) -> argparse.ArgumentParser
                         help='預覽模式：僅列出待處理檔案，不實際處理')
     parser.add_argument('-d', '--max-depth', type=int, default=None,
                         help='最大遞迴深度 (0=不進入子目錄, 未指定=無限)')
-    parser.add_argument('--min-size', type=str, default=None,
+    parser.add_argument('-m', '--min-size', '--min', type=str, default=None,
                         help='最小檔案限制 (低於此大小將被跳過)，範例: 500KB, 2MB')
-    parser.add_argument('--max-size', type=str, default=None,
+    parser.add_argument('-M', '--max-size', '--max', type=str, default=None,
                         help='最大檔案限制 (高於此大小將被跳過)，範例: 10MB')
     parser.add_argument('--skip-if-newer', action='store_true',
                         help='如果目標檔案存在且比來源檔案新則跳過 (適用於增量備份)')
