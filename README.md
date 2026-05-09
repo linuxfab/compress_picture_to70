@@ -1,4 +1,4 @@
-# 圖片批量壓縮與轉檔工具 v8.1 / v7.1
+# 圖片批量壓縮與轉檔工具 v8.1.1 / v7.1.1
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
 - 最後更新時間: 2026-05-09
@@ -53,6 +53,7 @@ uv sync
 **圖片壓縮 (原地壓縮/另存新檔)**
 ```bash
 uv run compress-img "D:\Photos"
+# 備註：也可使用別名 compress-images 或 compress_images
 ```
 
 **圖片轉 WebP (輸出至 webp_output)**
@@ -66,6 +67,7 @@ uv run images-to-webp "D:\Photos"
 
 ```bash
 uv run compress-img <目錄路徑> [選項]
+# 或使用: uv run compress_images <目錄路徑> [選項]
 ```
 
 | 參數 | 說明 | 預設值 |
@@ -97,7 +99,7 @@ uv run images-to-webp <目錄路徑> [選項]
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
 
 ## 專案結構
-- `utils.py`: 共用核心模組 (v8.1/v7.1 重構版)
+- `utils.py`: 共用核心模組 (v8.1.1 重構版)
 - `compress_images.py`: 圖片壓縮 CLI
 - `images_to_webp.py`: WebP 轉檔 CLI
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
