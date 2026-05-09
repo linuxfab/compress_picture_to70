@@ -337,7 +337,8 @@ def process_image_core(
     output_format: str | None = None, # None = 自動偵測
     lossless: bool = False,
     skip_if_larger: bool = True,
-    force_convert_from: set[str] | None = None
+    force_convert_from: set[str] | None = None,
+    file_stat: os.stat_result | None = None
 ) -> FileResult:
     """
     圖片處理核心邏輯：
@@ -348,7 +349,8 @@ def process_image_core(
     5. 決定是否寫入硬碟
     """
     try:
-        original_size = filepath.stat().st_size
+        orig_stat = file_stat if file_stat is not None else filepath.stat()
+        original_size = orig_stat.st_size
         with Image.open(filepath) as img:
             img.load()  # 強制讀入記憶體，釋放 file handle
             
@@ -404,7 +406,6 @@ def process_image_core(
             f.write(buf.getvalue())
 
         # 保留修改時間
-        orig_stat = filepath.stat()
         os.utime(target_path, (orig_stat.st_atime, orig_stat.st_mtime))
 
         return FileResult('success', "OK", original_size, new_size)

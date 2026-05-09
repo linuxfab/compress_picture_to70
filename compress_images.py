@@ -22,6 +22,12 @@ def compress_image(
 ) -> FileResult:
     """壓縮單張圖片並另存新檔"""
     try:
+        # 單次取得檔案狀態，減少 I/O
+        try:
+            f_stat = filepath.stat()
+        except Exception as e:
+            return FileResult('failed', f"讀取檔案狀態失敗 {filepath.name}: {e}")
+
         suffix = f"_{quality}%"
         
         # BMP 直接跳過 (雖然 PIL 支援，但通常壓縮效果差)
@@ -29,14 +35,11 @@ def compress_image(
             return FileResult('skipped', f"跳過 BMP: {filepath.name}")
 
         # 0. 大小過濾
-        try:
-            file_size = filepath.stat().st_size
-            if min_size_bytes is not None and file_size < min_size_bytes:
-                return FileResult('skipped', f"跳過 (太小): {filepath.name} ({format_size(file_size)})")
-            if max_size_bytes is not None and file_size > max_size_bytes:
-                return FileResult('skipped', f"跳過 (太大): {filepath.name} ({format_size(file_size)})")
-        except Exception as e:
-            return FileResult('failed', f"讀取檔案大小失敗 {filepath.name}: {e}")
+        file_size = f_stat.st_size
+        if min_size_bytes is not None and file_size < min_size_bytes:
+            return FileResult('skipped', f"跳過 (太小): {filepath.name} ({format_size(file_size)})")
+        if max_size_bytes is not None and file_size > max_size_bytes:
+            return FileResult('skipped', f"跳過 (太大): {filepath.name} ({format_size(file_size)})")
 
         # 1. 決定輸出目標的「相對存儲目錄」與「檔名」
         if in_place:
@@ -58,13 +61,13 @@ def compress_image(
 
         # 檢查檔案是否已存在或較新
         if target_path.exists():
-            if skip_if_newer and target_path.stat().st_mtime >= filepath.stat().st_mtime:
+            if skip_if_newer and target_path.stat().st_mtime >= f_stat.st_mtime:
                 return FileResult('skipped', f"目標檔案較新: {target_path.name}")
             elif not overwrite and not in_place:
                 return FileResult('skipped', f"檔案已存在: {target_path.name}")
 
         if dry_run:
-            return FileResult('dry_run', f"[預覽] 將壓縮: {target_path.name} ({format_size(filepath.stat().st_size)})")
+            return FileResult('dry_run', f"[預覽] 將壓縮: {target_path.name} ({format_size(file_size)})")
 
         # 呼叫核心處理
         fmt_map = {'.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.webp': 'WEBP'}
@@ -77,7 +80,8 @@ def compress_image(
             keep_exif=keep_exif,
             scale=scale,
             output_format=output_format,
-            force_convert_from={'.heic', '.avif'}
+            force_convert_from={'.heic', '.avif'},
+            file_stat=f_stat
         )
 
     except Exception as e:

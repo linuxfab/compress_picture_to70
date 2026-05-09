@@ -22,15 +22,18 @@ def convert_to_webp(
 ) -> FileResult:
     """將單張圖片轉換為 WebP 並另存新檔"""
     try:
-        # 0. 大小過濾
+        # 單次取得檔案狀態，減少 I/O
         try:
-            file_size = filepath.stat().st_size
-            if min_size_bytes is not None and file_size < min_size_bytes:
-                return FileResult('skipped', f"跳過 (太小): {filepath.name} ({format_size(file_size)})")
-            if max_size_bytes is not None and file_size > max_size_bytes:
-                return FileResult('skipped', f"跳過 (太大): {filepath.name} ({format_size(file_size)})")
+            f_stat = filepath.stat()
         except Exception as e:
-            return FileResult('failed', f"讀取檔案大小失敗 {filepath.name}: {e}")
+            return FileResult('failed', f"讀取檔案狀態失敗 {filepath.name}: {e}")
+
+        # 0. 大小過濾
+        file_size = f_stat.st_size
+        if min_size_bytes is not None and file_size < min_size_bytes:
+            return FileResult('skipped', f"跳過 (太小): {filepath.name} ({format_size(file_size)})")
+        if max_size_bytes is not None and file_size > max_size_bytes:
+            return FileResult('skipped', f"跳過 (太大): {filepath.name} ({format_size(file_size)})")
         try:
             rel_path = filepath.relative_to(root_dir)
         except ValueError:
@@ -39,13 +42,13 @@ def convert_to_webp(
         target_path = target_root / rel_path.with_suffix('.webp')
 
         if target_path.exists():
-            if skip_if_newer and target_path.stat().st_mtime >= filepath.stat().st_mtime:
+            if skip_if_newer and target_path.stat().st_mtime >= f_stat.st_mtime:
                 return FileResult('skipped', f"目標較新: {target_path.name}")
             elif not overwrite and not in_place:
                 return FileResult('skipped', f"檔案已存在: {target_path.name}")
 
         if dry_run:
-            return FileResult('dry_run', f"[預覽] 轉 WebP: {target_path.name} ({format_size(filepath.stat().st_size)})")
+            return FileResult('dry_run', f"[預覽] 轉 WebP: {target_path.name} ({format_size(file_size)})")
 
         result = process_image_core(
             filepath=filepath,
@@ -55,7 +58,8 @@ def convert_to_webp(
             scale=scale,
             output_format='WEBP',
             lossless=lossless,
-            skip_if_larger=False  # 轉檔通常不論大小都要轉
+            skip_if_larger=False,  # 轉檔通常不論大小都要轉
+            file_stat=f_stat
         )
 
         if result.status == 'success' and in_place and not dry_run:
