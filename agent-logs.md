@@ -1,5 +1,17 @@
 # Agent Logs
 
+- 2026-05-10 09:44
+  - 重點: v8.3.0 — 全面優化 (Bug 修復 × 3、架構改進 × 4、DX 提升 × 3)
+  - 影響: 
+    - `utils.py`: (1) 修正 `process_image_core` 的 `with Image.open()` context manager 過早退出問題，改為不使用 CM 避免 `exif_transpose`/`resize` 產生新物件後的引用風險。(2) 修正 `buf.getvalue()` 被呼叫兩次造成不必要的記憶體 copy，改為一次性取出並快取。(3) 提取 `FORMAT_MAP` 常數取代散落各處的 local `fmt_map`。(4) `collect_files` 回傳值加 `sorted()`，確保跨平台結果一致可預測。(5) 新增 `validate_scale()` 與 `build_filter_info()` 共用函式，消滅兩個腳本的重複 boilerplate。(6) `create_base_parser` 新增 `--version` flag。版本升至 v8.3.0。
+    - `compress_images.py`: 使用 `FORMAT_MAP`、`validate_scale`、`build_filter_info`；修復 HEIC/AVIF `--in-place` 模式下格式轉換 (`.heic→.jpg`) 後原始檔案未刪除的孤兒檔 bug。
+    - `images_to_webp.py`: 使用 `validate_scale`、`build_filter_info` 消滅重複代碼。
+    - `tests/test_image_logic.py`: 全面重寫，從脆弱的 mock 改為使用真實 PIL 圖片的整合測試 (7 個測試案例涵蓋壓縮、縮放、格式轉換、RGBA→RGB、損壞檔案、原子寫入時間戳保留)。
+    - `tests/test_utils.py`: 新增 `validate_scale`、`build_filter_info`、`FORMAT_MAP`、`collect_files` 排序順序的測試。
+    - `pyproject.toml`: 版本號從 `0.1.0` 同步至 `8.3.0`，新增 `pytest` dev dependency。
+  - 結果: 修復 3 個潛在 bug (CM 引用風險、記憶體重複拷貝、HEIC in-place 孤兒檔)，消除跨檔案重複代碼，測試從 12 個增至 18 個 (全通過)，CLI 新增 `--version` flag。
+  - 更新者: Antigravity Agent
+
 - 2026-05-09 14:38
   - 重點: v8.2.0 — 六項全面優化 (安全性/UX/效能/健壯性)
   - 影響: 

@@ -16,7 +16,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable, Iterable
 import argparse
 
-__version__ = "8.2.0"
+__version__ = "8.3.0"
 
 # 引入 Rich 函式庫做終端機視覺化美化
 from rich.console import Console
@@ -40,6 +40,12 @@ SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.heic', '.avif'}
 
 # 用於偵測已壓縮檔案的 regex pattern (e.g. _70%, _50%)
 COMPRESSED_SUFFIX_PATTERN = re.compile(r'_\d+%$')
+
+# 格式映射表 (副檔名 → PIL format string)
+FORMAT_MAP = {
+    '.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG',
+    '.webp': 'WEBP', '.avif': 'AVIF',
+}
 
 # -----------------
 
@@ -155,7 +161,7 @@ def collect_files(
             
             files.append(f)
         
-    return files
+    return sorted(files)
 
 
 def run_pipeline(
@@ -325,6 +331,7 @@ def create_base_parser(description: str, epilog: str) -> argparse.ArgumentParser
                         help='縮放比例 (0.1 - 1.0)，例如 0.5 表示長寬減半 (預設: 1.0)')
     parser.add_argument('--in-place', action='store_true',
                         help='原地覆蓋：直接取代原始檔案 (不加後綴，且會自動刪除/覆蓋原檔，請小心使用)')
+    parser.add_argument('--version', action='version', version=f'%(prog)s v{__version__}')
     return parser
 
 
@@ -352,6 +359,26 @@ def validate_quality(quality: int) -> bool:
         console.print("[bold red]錯誤：壓縮品質 quality 必須在 1-100 之間。[/bold red]")
         return False
     return True
+
+
+def validate_scale(scale: float) -> bool:
+    """驗證 scale 參數範圍，回傳 False 表示無效"""
+    if not 0.1 <= scale <= 1.0:
+        console.print("[bold red]錯誤：--scale 必須在 0.1-1.0 之間[/bold red]")
+        return False
+    return True
+
+
+def build_filter_info(min_size: int | None, max_size: int | None, scale: float) -> str:
+    """組裝過濾條件的顯示字串，供 Welcome Panel 使用"""
+    parts: list[str] = []
+    if min_size:
+        parts.append(f">= {format_size(min_size)}")
+    if max_size:
+        parts.append(f"<= {format_size(max_size)}")
+    if scale < 1.0:
+        parts.append(f"縮放 {scale:.0%}")
+    return f" | [bold red]過濾[/bold red]: {', '.join(parts)}" if parts else ""
 
 
 # --- 新增：圖片處理核心邏輯 ---
@@ -386,52 +413,60 @@ def process_image_core(
     try:
         orig_stat = file_stat if file_stat is not None else filepath.stat()
         original_size = orig_stat.st_size
-        with Image.open(filepath) as img:
-            img.load()  # 強制讀入記憶體，釋放 file handle
-            
-            # 修正 EXIF 旋轉問題 (手機照片必備) - 必須在 resize 前
-            img = ImageOps.exif_transpose(img)
 
-            # 縮放處理
-            if 0.1 <= scale < 1.0:
-                new_width = max(1, int(img.width * scale))
-                new_height = max(1, int(img.height * scale))
-                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        # 不使用 context manager：exif_transpose / resize 會產生新物件，
+        # 若在 with 內賦值 img = ... 會導致 __exit__ 關閉的是舊物件而非新的，
+        # 且後續操作在 with 外部使用 img 會有潛在風險。
+        # img.load() 呼叫後 PIL 內部已釋放 file handle，安全無虞。
+        img = Image.open(filepath)
+        img.load()  # 強制讀入記憶體，PIL 內部釋放 file handle
 
-            exif_data = get_exif_data(img) if keep_exif else None
-        
+        # 修正 EXIF 旋轉問題 (手機照片必備) - 必須在 resize 前
+        img = ImageOps.exif_transpose(img)
+
+        # 縮放處理
+        if 0.1 <= scale < 1.0:
+            new_width = max(1, int(img.width * scale))
+            new_height = max(1, int(img.height * scale))
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+        exif_data = get_exif_data(img) if keep_exif else None
+
         # 色彩模式標準化
         if img.mode in ('CMYK', 'P', 'RGBA') and output_format in ('JPEG', 'JPG'):
-             img = img.convert('RGB')
+            img = img.convert('RGB')
         elif img.mode in ('CMYK', 'P') and output_format in ('WEBP', 'AVIF'):
-             img = img.convert('RGB')
+            img = img.convert('RGB')
 
         # 準備儲存參數
         save_kwargs = {'optimize': True}
         if output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
             if not lossless:
                 save_kwargs['quality'] = quality
-        
+
         if lossless and output_format in ('WEBP', 'AVIF'):
             save_kwargs['lossless'] = True
-            
+
         if exif_data:
             save_kwargs['exif'] = exif_data
 
         # 決定最終格式
         if not output_format:
-            fmt_map = {'.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.webp': 'WEBP', '.avif': 'AVIF'}
-            output_format = fmt_map.get(target_path.suffix.lower(), 'JPEG')
+            output_format = FORMAT_MAP.get(target_path.suffix.lower(), 'JPEG')
 
         # 先存到記憶體緩衝區檢查大小
         buf = io.BytesIO()
         img.save(buf, format=output_format, **save_kwargs)
         new_size = buf.tell()
-        
+
+        # 一次性取出資料並釋放 buffer，避免後續重複 copy
+        data = buf.getvalue()
+        buf.close()
+
         # 檢查是否越壓越大 (排除特定轉檔需求)
         orig_ext = filepath.suffix.lower()
         should_force = force_convert_from and orig_ext in force_convert_from
-        
+
         if skip_if_larger and new_size >= original_size and not should_force:
             return FileResult('size_skip', f"檔案 {filepath.name} 越壓越大，捨棄變更")
 
@@ -446,7 +481,7 @@ def process_image_core(
                 dir=str(target_path.parent)
             )
             with os.fdopen(fd, 'wb') as f:
-                f.write(buf.getvalue())
+                f.write(data)
             os.replace(tmp_path, str(target_path))
         except Exception:
             # 若原子寫入失敗，清理暫存檔後 fallback 直寫
@@ -456,7 +491,7 @@ def process_image_core(
                 except Exception:
                     pass
             with open(target_path, 'wb') as f:
-                f.write(buf.getvalue())
+                f.write(data)
 
         # 保留修改時間
         os.utime(target_path, (orig_stat.st_atime, orig_stat.st_mtime))

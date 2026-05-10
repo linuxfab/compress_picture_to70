@@ -8,11 +8,12 @@ from functools import partial
 
 from utils import (
     FileResult, collect_files, run_pipeline, print_summary,
-    create_base_parser, resolve_directory, validate_quality,
-    parse_size_to_bytes, format_size, setup_logger, console,
-    SUPPORTED_FORMATS, COMPRESSED_SUFFIX_PATTERN, process_image_core,
+    create_base_parser, resolve_directory, validate_quality, validate_scale,
+    parse_size_to_bytes, format_size, build_filter_info, setup_logger, console,
+    SUPPORTED_FORMATS, COMPRESSED_SUFFIX_PATTERN, FORMAT_MAP, process_image_core,
     __version__
 )
+from rich.panel import Panel
 
 def compress_image(
     filepath: Path, root_dir: Path, out_dir: Path | None, 
@@ -69,11 +70,10 @@ def compress_image(
         if dry_run:
             return FileResult('dry_run', f"[預覽] 將壓縮: {target_path.name} ({format_size(file_size)})")
 
-        # 呼叫核心處理
-        fmt_map = {'.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.webp': 'WEBP'}
-        output_format = fmt_map.get(target_path.suffix.lower(), 'JPEG')
+        # 呼叫核心處理 — 使用集中管理的 FORMAT_MAP
+        output_format = FORMAT_MAP.get(target_path.suffix.lower(), 'JPEG')
         
-        return process_image_core(
+        result = process_image_core(
             filepath=filepath,
             target_path=target_path,
             quality=quality,
@@ -83,6 +83,16 @@ def compress_image(
             force_convert_from={'.heic', '.avif'},
             file_stat=f_stat
         )
+
+        # in_place 且格式轉換時 (e.g. .heic → .jpg)，刪除原始檔案避免孤兒檔
+        if result.status == 'success' and in_place and target_path != filepath:
+            if target_path.exists() and target_path.stat().st_size > 0:
+                try:
+                    filepath.unlink()
+                except Exception:
+                    pass  # 刪不掉也不影響壓縮結果
+
+        return result
 
     except Exception as e:
         return FileResult('failed', f"檔案 {filepath.name} 解析失敗: {e}")
@@ -100,8 +110,7 @@ def main():
     args = parser.parse_args()
     setup_logger(verbose=args.verbose)
     
-    if not 0.1 <= args.scale <= 1.0:
-        console.print("[bold red]錯誤：--scale 必須在 0.1-1.0 之間[/bold red]")
+    if not validate_scale(args.scale):
         return
         
     directory = resolve_directory(args)
@@ -117,20 +126,12 @@ def main():
     root_path = Path(directory)
     out_dir_path = Path(args.out_dir) if args.out_dir else None
 
-    from rich.panel import Panel
-    filter_parts = []
-    if min_size:
-        filter_parts.append(f">= {format_size(min_size)}")
-    if max_size:
-        filter_parts.append(f"<= {format_size(max_size)}")
-    if args.scale < 1.0:
-        filter_parts.append(f"縮放 {args.scale:.0%}")
-    filter_str = f" | [bold red]過濾[/bold red]: {', '.join(filter_parts)}" if filter_parts else ""
+    filter_str = build_filter_info(min_size, max_size, args.scale)
 
     welcome_str = (
-        f"📂 [bold cyan]目標來源[/bold cyan]: {directory}\n"
-        f"📁 [bold magenta]輸出位置[/bold magenta]: {args.out_dir if args.out_dir else ('[原地覆蓋]' if args.in_place else '[原地後綴]')}\n"
-        f"⚙️  [bold yellow]品質[/bold yellow]: {args.quality}% | [bold green]並發[/bold green]: {args.workers}{filter_str}"
+        f"[來源] [bold cyan]目標來源[/bold cyan]: {directory}\n"
+        f"[輸出] [bold magenta]輸出位置[/bold magenta]: {args.out_dir if args.out_dir else ('[原地覆蓋]' if args.in_place else '[原地後綴]')}\n"
+        f"[設定] [bold yellow]品質[/bold yellow]: {args.quality}% | [bold green]並發[/bold green]: {args.workers}{filter_str}"
     )
     console.print(Panel.fit(welcome_str, title=f"[bold]圖片壓縮工具 v{__version__}[/bold]"))
 

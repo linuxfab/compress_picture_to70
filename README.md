@@ -1,17 +1,16 @@
-# 圖片批量壓縮與轉檔工具 v8.2.0 / v7.2.0
+# 圖片批量壓縮與轉檔工具 v8.3.0
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
-- 最後更新時間: 2026-05-09
+- 最後更新時間: 2026-05-10
 
 遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。本版本進行了重大重構，大幅提升了效能與代碼品質。
 
-## 最新改進 (v8.2.0)
-- **原子寫入**: `--in-place` 改用 `tempfile` + `os.replace` 實作，寫入中途斷電也不會毀損原檔。
-- **路徑驗證**: 目標路徑不存在或不是目錄時，立即顯示錯誤訊息，不再靜默回傳 0 個檔案。
-- **過濾條件透明化**: Welcome 面板顯示當前生效的 `-m` / `-M` / `--scale` 參數。
-- **自動核心數偵測**: `--workers` 預設值改由 `os.cpu_count()` 自動設定 (上限 8)。
-- **執行計時**: 統計報表新增總執行時間顬示。
-- **優雅中斷**: Ctrl+C 不再噴出 Traceback，而是乾淨停止並顯示已完成的統計。
+## 最新改進 (v8.3.0)
+- **Bug 修復**: 修正 `process_image_core` 的 `with Image.open()` context manager 過早退出問題；修正 `buf.getvalue()` 重複記憶體拷貝；修復 HEIC/AVIF `--in-place` 模式下格式轉換後原始檔案未刪除的孤兒檔 bug。
+- **架構優化**: 提取 `FORMAT_MAP` 常數取代散落各處的 local 映射表；新增 `validate_scale()` 與 `build_filter_info()` 共用函式消滅兩個腳本的重複代碼。
+- **可預測性**: `collect_files` 回傳排序後的列表，確保跨平台執行結果一致。
+- **CLI**: 新增 `--version` flag；`pyproject.toml` 版本號同步至 `8.3.0`。
+- **測試**: 重寫 `test_image_logic.py`，從脆弱的 mock 改為真實 PIL 圖片整合測試 (18 個測試全通過)。
 
 ## 專案功能
 
@@ -83,7 +82,8 @@ uv run compress-img <目錄路徑> [選項]
 | `-M, --max-size` | 最大檔案過濾 | (無) |
 | `-o, --overwrite` | 覆蓋已存在的壓縮檔 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
-| `-w, --workers` | Process 數量 (並行) | 4 |
+| `-w, --workers` | Process 數量 (並行) | 自動偵測 CPU 核心數 (上限 8) |
+| `--version` | 顯示版本號 | — |
 | `-n, --dry-run` | 預覽模式：僅列出待處理檔案 | 否 |
 | `-d, --max-depth`| 最大遞迴深度 (0=不進入子目錄) | 無限 |
 
@@ -102,19 +102,23 @@ uv run images-to-webp <目錄路徑> [選項]
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
 
 ## 專案結構
-- `utils.py`: 共用核心模組 (v8.2.0 重構版)
+- `utils.py`: 共用核心模組 (v8.3.0)
 - `compress_images.py`: 圖片壓縮 CLI
 - `images_to_webp.py`: WebP 轉檔 CLI
+- `tests/`: 單元測試 (18 個測試案例)
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
 
 ## 架構設計
 
 ```
 utils.py
-├── process_image_core()        — [NEW] 統一的圖片處理核心 (開啟/縮放/轉換/緩衝區儲存)
-├── collect_files()             — [OPTIMIZED] 使用 os.walk 提升掃描效能
-├── run_pipeline()              — 並行處理管線
-└── print_summary()             — [NEW] 包含平均節省空間的報表
+├── FORMAT_MAP                  — 集中管理的格式映射表
+├── process_image_core()        — 統一的圖片處理核心 (開啟/縮放/轉換/原子寫入)
+├── collect_files()             — os.walk 掃描 + sorted() 排序
+├── run_pipeline()              — 並行處理管線 (ProcessPoolExecutor)
+├── validate_scale()            — 共用 scale 參數驗證
+├── build_filter_info()         — 共用過濾條件顯示字串組裝
+└── print_summary()             — 含平均節省空間的報表
 ```
 
 ## License
@@ -122,4 +126,4 @@ MIT
 
 ## Authors
 - [linuxfab](https://github.com/linuxfab)
-- Last Update: 2026-05-09 13:19
+- Last Update: 2026-05-10 09:44

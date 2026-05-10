@@ -4,8 +4,9 @@ import shutil
 import tempfile
 from pathlib import Path
 from utils import (
-    format_size, validate_quality, FileResult, 
-    parse_size_to_bytes, collect_files, SUPPORTED_FORMATS
+    format_size, validate_quality, validate_scale, build_filter_info,
+    FileResult, parse_size_to_bytes, collect_files,
+    SUPPORTED_FORMATS, FORMAT_MAP
 )
 
 class TestUtils(unittest.TestCase):
@@ -35,6 +36,30 @@ class TestUtils(unittest.TestCase):
         self.assertFalse(validate_quality(0))
         self.assertFalse(validate_quality(101))
 
+    def test_validate_scale(self):
+        self.assertTrue(validate_scale(0.5))
+        self.assertTrue(validate_scale(0.1))
+        self.assertTrue(validate_scale(1.0))
+        self.assertFalse(validate_scale(0.05))
+        self.assertFalse(validate_scale(1.5))
+
+    def test_build_filter_info_empty(self):
+        result = build_filter_info(None, None, 1.0)
+        self.assertEqual(result, "")
+
+    def test_build_filter_info_with_filters(self):
+        result = build_filter_info(1024 * 1024, None, 0.5)
+        self.assertIn("1.0 MB", result)
+        self.assertIn("縮放", result)
+        self.assertIn("50%", result)
+
+    def test_format_map_keys(self):
+        self.assertEqual(FORMAT_MAP['.jpg'], 'JPEG')
+        self.assertEqual(FORMAT_MAP['.jpeg'], 'JPEG')
+        self.assertEqual(FORMAT_MAP['.png'], 'PNG')
+        self.assertEqual(FORMAT_MAP['.webp'], 'WEBP')
+        self.assertEqual(FORMAT_MAP['.avif'], 'AVIF')
+
     def test_file_result(self):
         result = FileResult('success', 'test', 100, 50)
         self.assertEqual(result.status, 'success')
@@ -59,6 +84,16 @@ class TestUtils(unittest.TestCase):
         self.assertIn("img4.webp", file_names)
         self.assertNotIn("text.txt", file_names)
         self.assertNotIn("img3.jpg", file_names) # 隱藏目錄應被跳過
+
+    def test_collect_files_sorted(self):
+        """collect_files 回傳結果應為排序後的列表"""
+        (self.test_dir / "c.jpg").touch()
+        (self.test_dir / "a.jpg").touch()
+        (self.test_dir / "b.jpg").touch()
+
+        files = collect_files(self.test_dir, SUPPORTED_FORMATS)
+        names = [f.name for f in files]
+        self.assertEqual(names, sorted(names))
 
     def test_collect_files_max_depth(self):
         (self.test_dir / "img1.jpg").touch()
