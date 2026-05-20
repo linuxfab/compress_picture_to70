@@ -482,6 +482,15 @@ def process_image_core(
             )
             with os.fdopen(fd, 'wb') as f:
                 f.write(data)
+            
+            # Windows 唯讀屬性相容性修復
+            if target_path.exists():
+                try:
+                    import stat
+                    os.chmod(target_path, stat.S_IWRITE)
+                except Exception:
+                    pass
+                    
             os.replace(tmp_path, str(target_path))
         except Exception:
             # 若原子寫入失敗，清理暫存檔後 fallback 直寫
@@ -490,6 +499,14 @@ def process_image_core(
                     os.unlink(tmp_path)
                 except Exception:
                     pass
+            
+            if target_path.exists():
+                try:
+                    import stat
+                    os.chmod(target_path, stat.S_IWRITE)
+                except Exception:
+                    pass
+                    
             with open(target_path, 'wb') as f:
                 f.write(data)
 

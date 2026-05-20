@@ -1,5 +1,13 @@
 # Agent Logs
 
+- 2026-05-20 22:09
+  - 重點: 修復 `utils.py` 原子寫入對 Windows 唯讀屬性的安全替換並新增對應單元測試
+  - 影響: 
+    - `utils.py`: 在執行 `os.replace` 與 fallback 的 `open` 直寫前，引入 `os.chmod(target, stat.S_IWRITE)` 解鎖唯讀限制，防止 Windows PermissionError 導致的寫入失敗。
+    - `tests/test_image_logic.py`: 新增 `test_process_image_core_readonly_compatibility` 測試案例，模擬並驗證對唯讀屬性檔案的覆寫能力。
+  - 結果: 成功消除了 Windows 覆蓋唯讀照片時的潛在 PermissionError 崩潰隱患，單元測試增至 24 個全數通過。
+  - 更新者: Antigravity Agent
+
 - 2026-05-20 22:07
   - 重點: 修復 `images_to_webp.py` 在 nested 輸出目錄時重複掃描的漏洞，並新增對應單元測試
   - 影響: 

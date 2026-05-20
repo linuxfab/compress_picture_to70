@@ -193,6 +193,33 @@ class TestImageLogic(unittest.TestCase):
         self.assertIn(src_file.resolve(), [f.resolve() for f in filtered_files])
         self.assertNotIn(nested_out_file.resolve(), [f.resolve() for f in filtered_files])
 
+    def test_process_image_core_readonly_compatibility(self):
+        """測試當目標檔案為唯讀 (ReadOnly) 屬性時，原子寫入是否能成功覆蓋"""
+        import os
+        import stat
+        target_path = self.test_dir / "readonly_out.jpg"
+        # 先建立一個空檔案並設定為唯讀
+        target_path.touch()
+        os.chmod(target_path, stat.S_IREAD)
+        
+        try:
+            result = process_image_core(
+                filepath=self.test_img_path,
+                target_path=target_path,
+                quality=70,
+                output_format='JPEG',
+                skip_if_larger=False
+            )
+            self.assertEqual(result.status, 'success')
+            self.assertTrue(target_path.exists())
+            self.assertGreater(target_path.stat().st_size, 0)
+        finally:
+            # 測試結束後還原權限以便 cleanup 可以順利刪除該暫存目錄
+            try:
+                os.chmod(target_path, stat.S_IWRITE)
+            except Exception:
+                pass
+
 
 if __name__ == '__main__':
     unittest.main()
