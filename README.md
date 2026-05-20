@@ -1,16 +1,16 @@
 # 圖片批量壓縮與轉檔工具 v8.3.0
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
-- 最後更新時間: 2026-05-10
+- 最後更新時間: 2026-05-20
 
 遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。本版本進行了重大重構，大幅提升了效能與代碼品質。
 
 ## 最新改進 (v8.3.0)
-- **Bug 修復**: 修正 `process_image_core` 的 `with Image.open()` context manager 過早退出問題；修正 `buf.getvalue()` 重複記憶體拷貝；修復 HEIC/AVIF `--in-place` 模式下格式轉換後原始檔案未刪除的孤兒檔 bug。
+- **Bug 修復**: 修正 `process_image_core` 的 `with Image.open()` context manager 過早退出問題；修正 `buf.getvalue()` 重複記憶體拷貝；修復 HEIC/AVIF `--in-place` 模式下格式轉換後原始檔案未刪除的孤兒檔 bug；**新增 nested 輸出目錄精準過濾**，徹底修復 `images_to_webp.py` 當輸出目錄是深度 nested 子目錄時過濾失效進而重複掃描轉檔檔的漏洞。
 - **架構優化**: 提取 `FORMAT_MAP` 常數取代散落各處的 local 映射表；新增 `validate_scale()` 與 `build_filter_info()` 共用函式消滅兩個腳本的重複代碼。
 - **可預測性**: `collect_files` 回傳排序後的列表，確保跨平台執行結果一致。
 - **CLI**: 新增 `--version` flag；`pyproject.toml` 版本號同步至 `8.3.0`。
-- **測試**: 重寫 `test_image_logic.py`，從脆弱的 mock 改為真實 PIL 圖片整合測試 (18 個測試全通過)。
+- **測試**: 重寫 `test_image_logic.py`，從脆弱的 mock 改為真實 PIL 圖片整合測試 (18 個測試已擴增至 23 個全數通過)。
 
 ## 專案功能
 

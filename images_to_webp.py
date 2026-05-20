@@ -119,9 +119,16 @@ def main():
     )
     console.print(Panel.fit(welcome_str, title=f"[bold]圖片轉 WebP 工具 v{__version__}[/bold]"))
 
-    # 排除 webp_output 本身避免無限遞迴
-    exclude_targets = {out_dir_path.name} if out_dir_path.parent == root_path else set()
-    
+    # 排除 webp_output 本身避免遞迴掃描
+    exclude_targets = set()
+    if not args.in_place:
+        try:
+            # 如果輸出目錄是來源目錄的直接子目錄，將其名字加入 exclude_dirs 以優化掃描效能
+            if out_dir_path.parent.resolve() == root_path.resolve():
+                exclude_targets.add(out_dir_path.name)
+        except Exception:
+            pass
+
     # 轉 WebP 工具不需要掃描已經是 WebP 的檔案，避免重複處理與潛在的覆寫
     input_formats = {fmt for fmt in SUPPORTED_FORMATS if fmt != '.webp'}
     
@@ -129,6 +136,14 @@ def main():
         root_path, input_formats, exclude_dirs=exclude_targets, 
         max_depth=args.max_depth
     )
+
+    # 專家級精準路徑過濾：排除任何實際位於輸出目錄底下的檔案，防止 nested output 導致的重複處理
+    if not args.in_place:
+        try:
+            resolved_out = out_dir_path.resolve()
+            files = [f for f in files if not f.resolve().is_relative_to(resolved_out)]
+        except Exception:
+            pass
 
     worker = partial(
         convert_to_webp, root_dir=root_path, target_root=out_dir_path,

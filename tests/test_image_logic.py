@@ -172,6 +172,27 @@ class TestImageLogic(unittest.TestCase):
         )
         self.assertTrue(webp_path.exists())
 
+    def test_convert_to_webp_nested_output_filtering(self):
+        """測試轉檔時若輸出目錄位於更深層的子目錄，是否能精準濾除該輸出目錄"""
+        out_dir = self.test_dir / "output" / "webp"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 建立兩個測試檔案：一個在來源目錄，一個在輸出目錄
+        src_file = self.test_dir / "valid_image.png"
+        nested_out_file = out_dir / "already_processed.png"
+        src_file.touch()
+        nested_out_file.touch()
+        
+        from utils import collect_files, SUPPORTED_FORMATS
+        files = collect_files(self.test_dir, SUPPORTED_FORMATS)
+        
+        # 模擬 images_to_webp 中的 is_relative_to 過濾邏輯
+        resolved_out = out_dir.resolve()
+        filtered_files = [f for f in files if not f.resolve().is_relative_to(resolved_out)]
+        
+        self.assertIn(src_file.resolve(), [f.resolve() for f in filtered_files])
+        self.assertNotIn(nested_out_file.resolve(), [f.resolve() for f in filtered_files])
+
 
 if __name__ == '__main__':
     unittest.main()

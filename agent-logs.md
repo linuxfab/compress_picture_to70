@@ -1,5 +1,13 @@
 # Agent Logs
 
+- 2026-05-20 22:07
+  - 重點: 修復 `images_to_webp.py` 在 nested 輸出目錄時重複掃描的漏洞，並新增對應單元測試
+  - 影響: 
+    - `images_to_webp.py`: 引入 `is_relative_to` 精準比對絕對路徑，在 collect_files 收集完畢後，強制排除任何位於 `out_dir_path` 底下的檔案，杜絕 nested 輸出目錄下的重複轉換與潛在覆寫問題。
+    - `tests/test_image_logic.py`: 新增 `test_convert_to_webp_nested_output_filtering` 單元測試，模擬並驗證 nested 目錄結構過濾之正確性。
+  - 結果: 成功修復深度 nested 輸出目錄掃描漏洞，單元測試數量提升至 23 個且全數通過。
+  - 更新者: Antigravity Agent
+
 - 2026-05-20 19:53
   - 重點: 修復 `images_to_webp.py` 在 `--in-place` 模式下的輸出目錄定位與自我刪除 Bug
   - 影響: 
