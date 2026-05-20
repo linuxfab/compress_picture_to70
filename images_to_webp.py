@@ -63,10 +63,12 @@ def convert_to_webp(
         )
 
         if result.status == 'success' and in_place and not dry_run:
-            if target_path.exists() and target_path.stat().st_size > 0:
-                filepath.unlink()
-            else:
-                return FileResult('failed', f"轉換後檔案異常，保留原檔: {filepath.name}")
+            # 確保 target_path 和 filepath 不同，避免自我刪除
+            if target_path != filepath:
+                if target_path.exists() and target_path.stat().st_size > 0:
+                    filepath.unlink()
+                else:
+                    return FileResult('failed', f"轉換後檔案異常，保留原檔: {filepath.name}")
 
         return result
 
@@ -101,7 +103,12 @@ def main():
         console.print(f"[bold red]{e}[/bold red]")
         return
     root_path = Path(directory)
-    out_dir_path = Path(args.out_dir) if args.out_dir else root_path / "webp_output"
+    
+    # 若為原地轉換，則輸出目錄為原目錄；否則預設輸出到 webp_output 目錄
+    if args.in_place:
+        out_dir_path = root_path
+    else:
+        out_dir_path = Path(args.out_dir) if args.out_dir else root_path / "webp_output"
 
     filter_str = build_filter_info(min_size, max_size, args.scale)
 
@@ -112,9 +119,14 @@ def main():
     )
     console.print(Panel.fit(welcome_str, title=f"[bold]圖片轉 WebP 工具 v{__version__}[/bold]"))
 
+    # 排除 webp_output 本身避免無限遞迴
     exclude_targets = {out_dir_path.name} if out_dir_path.parent == root_path else set()
+    
+    # 轉 WebP 工具不需要掃描已經是 WebP 的檔案，避免重複處理與潛在的覆寫
+    input_formats = {fmt for fmt in SUPPORTED_FORMATS if fmt != '.webp'}
+    
     files = collect_files(
-        root_path, SUPPORTED_FORMATS, exclude_dirs=exclude_targets, 
+        root_path, input_formats, exclude_dirs=exclude_targets, 
         max_depth=args.max_depth
     )
 

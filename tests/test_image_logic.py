@@ -129,6 +129,50 @@ class TestImageLogic(unittest.TestCase):
         # 修改時間 (mtime) 應該被保留
         self.assertAlmostEqual(target_stat.st_mtime, orig_stat.st_mtime, places=0)
 
+    def test_convert_to_webp_in_place(self):
+        """測試 convert_to_webp 原地轉換，原圖應被刪除且轉出新 webp 檔案"""
+        from images_to_webp import convert_to_webp
+        png_path = self.test_dir / "to_convert.png"
+        img = Image.new('RGB', (10, 10), color='green')
+        img.save(png_path, 'PNG')
+        
+        result = convert_to_webp(
+            filepath=png_path,
+            root_dir=self.test_dir,
+            target_root=self.test_dir,
+            quality=80,
+            overwrite=True,
+            dry_run=False,
+            lossless=False,
+            keep_exif=True,
+            in_place=True
+        )
+        self.assertEqual(result.status, 'success')
+        target_webp = self.test_dir / "to_convert.webp"
+        self.assertTrue(target_webp.exists())
+        self.assertFalse(png_path.exists())
+
+    def test_convert_to_webp_self_deletion_protection(self):
+        """測試 convert_to_webp 傳入已經是 webp 的檔案時，應保護不自我刪除"""
+        from images_to_webp import convert_to_webp
+        webp_path = self.test_dir / "already.webp"
+        img = Image.new('RGB', (10, 10), color='blue')
+        img.save(webp_path, 'WEBP')
+
+        result = convert_to_webp(
+            filepath=webp_path,
+            root_dir=self.test_dir,
+            target_root=self.test_dir,
+            quality=80,
+            overwrite=True,
+            dry_run=False,
+            lossless=False,
+            keep_exif=True,
+            in_place=True
+        )
+        self.assertTrue(webp_path.exists())
+
 
 if __name__ == '__main__':
     unittest.main()
+

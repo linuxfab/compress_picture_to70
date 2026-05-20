@@ -1,5 +1,15 @@
 # Agent Logs
 
+- 2026-05-20 19:53
+  - 重點: 修復 `images_to_webp.py` 在 `--in-place` 模式下的輸出目錄定位與自我刪除 Bug
+  - 影響: 
+    - `images_to_webp.py`: 
+      - (1) 修正 `--in-place` 原地轉換下的輸出目錄定位，若 args.in_place 為 True 且未自訂 out_dir，則 out_dir_path 直接使用來源目錄 root_path，使輸出轉檔後的 webp 與原圖在同一目錄下。
+      - (2) 掃描輸入圖片時剔除 `.webp` 格式，避免 WebP 檔案重複轉換。
+      - (3) 在 unlink 原始圖片前增加 `target_path != filepath` 檢查，杜絕輸入與輸出同名時的自我刪除 Bug。
+  - 結果: 修正了 `images_to_webp.py` 原地轉換功能中檔案遺失與偏離原資料夾的 Bug，測試全數通過。
+  - 更新者: Antigravity Agent
+
 - 2026-05-10 09:44
   - 重點: v8.3.0 — 全面優化 (Bug 修復 × 3、架構改進 × 4、DX 提升 × 3)
   - 影響: 
