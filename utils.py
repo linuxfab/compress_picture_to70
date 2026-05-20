@@ -125,6 +125,7 @@ def collect_files(
     supported_formats: Iterable[str],
     exclude_dirs: set[str] | None = None,
     max_depth: int | None = None,
+    exclude_fn: Callable[[Path], bool] | None = None,
 ) -> list[Path]:
     """收集目錄及子目錄中所有符合格式的檔案，並自動濾除系統隱藏及專案目錄"""
     files: list[Path] = []
@@ -149,7 +150,10 @@ def collect_files(
                 continue
                 
             # 過濾隱藏與專案內部目錄 (修改 dirs 陣列會影響 os.walk 的後續遍歷)
-            dirs[:] = [d for d in dirs if not is_ignored(d)]
+            dirs[:] = [
+                d for d in dirs 
+                if not is_ignored(d) and not (exclude_fn and exclude_fn(root_path / d))
+            ]
             
         except ValueError:
             continue

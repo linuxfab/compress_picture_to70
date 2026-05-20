@@ -184,14 +184,22 @@ class TestImageLogic(unittest.TestCase):
         nested_out_file.touch()
         
         from utils import collect_files, SUPPORTED_FORMATS
-        files = collect_files(self.test_dir, SUPPORTED_FORMATS)
         
-        # 模擬 images_to_webp 中的 is_relative_to 過濾邏輯
-        resolved_out = out_dir.resolve()
-        filtered_files = [f for f in files if not f.resolve().is_relative_to(resolved_out)]
+        # 模擬與 images_to_webp 一致的 should_exclude 斷言
+        def should_exclude(dir_path: Path) -> bool:
+            try:
+                return dir_path.resolve() == out_dir.resolve() or dir_path.resolve().is_relative_to(out_dir.resolve())
+            except Exception:
+                return False
+                
+        files = collect_files(
+            self.test_dir, 
+            SUPPORTED_FORMATS, 
+            exclude_fn=should_exclude
+        )
         
-        self.assertIn(src_file.resolve(), [f.resolve() for f in filtered_files])
-        self.assertNotIn(nested_out_file.resolve(), [f.resolve() for f in filtered_files])
+        self.assertIn(src_file.resolve(), [f.resolve() for f in files])
+        self.assertNotIn(nested_out_file.resolve(), [f.resolve() for f in files])
 
     def test_process_image_core_readonly_compatibility(self):
         """測試當目標檔案為唯讀 (ReadOnly) 屬性時，原子寫入是否能成功覆蓋"""

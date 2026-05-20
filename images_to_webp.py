@@ -120,6 +120,12 @@ def main():
     console.print(Panel.fit(welcome_str, title=f"[bold]圖片轉 WebP 工具 v{__version__}[/bold]"))
 
     # 排除 webp_output 本身避免遞迴掃描
+    def should_exclude(dir_path: Path) -> bool:
+        try:
+            return dir_path.resolve() == out_dir_path.resolve() or dir_path.resolve().is_relative_to(out_dir_path.resolve())
+        except Exception:
+            return False
+
     exclude_targets = set()
     if not args.in_place:
         try:
@@ -134,16 +140,9 @@ def main():
     
     files = collect_files(
         root_path, input_formats, exclude_dirs=exclude_targets, 
-        max_depth=args.max_depth
+        max_depth=args.max_depth,
+        exclude_fn=should_exclude if not args.in_place else None
     )
-
-    # 專家級精準路徑過濾：排除任何實際位於輸出目錄底下的檔案，防止 nested output 導致的重複處理
-    if not args.in_place:
-        try:
-            resolved_out = out_dir_path.resolve()
-            files = [f for f in files if not f.resolve().is_relative_to(resolved_out)]
-        except Exception:
-            pass
 
     worker = partial(
         convert_to_webp, root_dir=root_path, target_root=out_dir_path,

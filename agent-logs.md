@@ -1,5 +1,14 @@
 # Agent Logs
 
+- 2026-05-20 22:10
+  - 重點: 優化 `images_to_webp.py` 的 nested 目錄過濾，將排除邏輯下沉至遍歷階段進行高效剪枝
+  - 影響: 
+    - `utils.py`: `collect_files` 引入 `exclude_fn: Callable[[Path], bool]` 參數，並在 `os.walk` 目錄展開 (`dirs[:]`) 時直接比對，主動阻止遞迴掃描被排除的目錄。
+    - `images_to_webp.py`: 傳遞 `should_exclude` 絕對路徑斷言給 `collect_files`，實現在掃描底層的高效精準剪枝。
+    - `tests/test_image_logic.py`: 重構 `test_convert_to_webp_nested_output_filtering` 單元測試，直接覆蓋並驗證 `exclude_fn` 的剪枝正確性。
+  - 結果: 提升了海量檔案目錄下排除輸出資料夾的磁碟 I/O 效率，24 個測試保持 100% 通過。
+  - 更新者: Antigravity Agent
+
 - 2026-05-20 22:09
   - 重點: 修復 `utils.py` 原子寫入對 Windows 唯讀屬性的安全替換並新增對應單元測試
   - 影響: 
