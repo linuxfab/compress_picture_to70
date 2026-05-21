@@ -1,16 +1,17 @@
-# 圖片批量壓縮與轉檔工具 v8.3.0
+# 圖片批量壓縮與轉檔工具 v8.4.0
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
-- 最後更新時間: 2026-05-20
+- 最後更新時間: 2026-05-21
 
-遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。本版本進行了重大重構，大幅提升了效能與代碼品質。
+遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。本版本進行了進階的影像效能優化與 TUI 終端體驗提升。
 
-## 最新改進 (v8.3.0)
-- **Bug 修復**: 修正 `process_image_core` 的 `with Image.open()` context manager 過早退出問題；修正 `buf.getvalue()` 重複記憶體拷貝；修復 HEIC/AVIF `--in-place` 模式下格式轉換後原始檔案未刪除的孤兒檔 bug；**新增 nested 輸出目錄精準過濾與底層剪枝**，藉由在 `utils.py` 的 `collect_files` 導入函數式排除 `exclude_fn`，徹底修復 `images_to_webp.py` 當輸出目錄是深度 nested 子目錄時過濾失效進而重複掃描的漏洞，並在 `os.walk` 底層直接阻斷遞迴，大優化磁碟 I/O 效能；**新增 Windows 唯讀屬性覆寫安全處理**，在原子替換與直寫前，引入 `os.chmod` 解除唯讀權限，避免在 Windows 環境下對唯讀屬性檔案覆蓋時引發的 PermissionError。
-- **架構優化**: 提取 `FORMAT_MAP` 常數取代散落各處 of local 映射表；新增 `validate_scale()` 與 `build_filter_info()` 共用函式消滅兩個腳本的重複代碼；**在 `collect_files` 導入高階 `exclude_fn` 函數式排除參數**以支援底層遞迴剪枝。
-- **可預測性**: `collect_files` 回傳排序後的列表，確保跨平台執行結果一致。
-- **CLI**: 新增 `--version` flag；`pyproject.toml` 版本號同步至 `8.3.0`。
-- **測試**: 重寫 `test_image_logic.py`，從脆弱的 mock 改為真實 PIL 圖片整合測試 (18 個測試已擴增至 24 個全數通過，並重構以直接覆蓋剪枝行為)。
+## 最新改進 (v8.4.0)
+- **透明通道融合 (Alpha Blending)**：當 `RGBA` / `LA` 圖片轉換為不支援透明的 `JPEG` 時，自動融合白色背景，解決透明像素被轉成黑色斑斑點點的問題。
+- **漸進式 JPEG 寫入**：大於 10KB 的 JPEG 寫入時自動啟用 `progressive=True`，不僅利於網頁加速載入，更能額外多省下 2% ~ 8% 的空間。
+- **WebP 最高壓縮演算**：WebP 轉換時預設啟用 `method=6`。此模式計算稍慢但能壓出最小體積，對於批量壓縮極具效益。
+- **動態進度條狀態 (TUI 提升)**：進度管線中，動態在進度條更新目前剛處理完的檔案名稱，提升視覺互動體驗。
+- **WebP 轉換防膨脹**：在 `images_to_webp.py` 引入 `--skip-if-larger` 可選參數，防止某些高壓縮 JPEG 轉換為 WebP 時體積反而膨脹。
+- **測試擴增**：單元測試從 24 個擴增至 27 個（全數通過），完整覆蓋了透明背景融合、Progressive JPEG 以及 WebP 防膨脹功能。
 
 ## 專案功能
 
@@ -100,12 +101,13 @@ uv run images-to-webp <目錄路徑> [選項]
 | `--in-place` | 原地轉換：轉換成功後刪除原始檔案 | 否 |
 | `-l, --lossless` | 使用無損壓縮 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
+| `--skip-if-larger` | 若 WebP 體積大於原圖則捨棄變更 | 否 |
 
 ## 專案結構
-- `utils.py`: 共用核心模組 (v8.3.0)
+- `utils.py`: 共用核心模組 (v8.4.0)
 - `compress_images.py`: 圖片壓縮 CLI
 - `images_to_webp.py`: WebP 轉檔 CLI
-- `tests/`: 單元測試 (18 個測試案例)
+- `tests/`: 單元測試 (27 個測試案例)
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
 
 ## 架構設計
@@ -126,4 +128,4 @@ MIT
 
 ## Authors
 - [linuxfab](https://github.com/linuxfab)
-- Last Update: 2026-05-10 09:44
+- Last Update: 2026-05-21 19:15

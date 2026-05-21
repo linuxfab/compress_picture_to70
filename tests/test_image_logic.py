@@ -228,6 +228,73 @@ class TestImageLogic(unittest.TestCase):
             except Exception:
                 pass
 
+    def test_process_image_core_rgba_to_jpeg_alpha_blending(self):
+        """測試 RGBA PNG 轉成 JPEG 時透明通道是否與白色背景正確混合而非變成黑色"""
+        rgba_path = self.test_dir / "rgba_blend.png"
+        # 建立一張完全透明 (alpha=0) 的紅色圖片
+        img = Image.new('RGBA', (10, 10), color=(255, 0, 0, 0))
+        img.save(rgba_path, 'PNG')
+
+        target_path = self.test_dir / "rgba_blend_out.jpg"
+        result = process_image_core(
+            filepath=rgba_path,
+            target_path=target_path,
+            quality=90,
+            output_format='JPEG',
+            skip_if_larger=False
+        )
+        self.assertEqual(result.status, 'success')
+        # 讀取轉出的 JPEG，透明處因為與白底混合，其顏色應為白色 (255, 255, 255)
+        with Image.open(target_path) as out_img:
+            pixels = list(out_img.getdata())
+            # 每一個像素都應該是白色 (255, 255, 255) 而非黑色 (0, 0, 0)
+            self.assertEqual(pixels[0], (255, 255, 255))
+
+    def test_process_image_core_progressive_jpeg(self):
+        """測試當 JPEG 大於 10KB 時，是否正確啟用 progressive 寫入"""
+        large_img_path = self.test_dir / "large.jpg"
+        # 建立一張足夠大能超過 10KB 的圖片 (比如 800x800)
+        img = Image.new('RGB', (800, 800), color='blue')
+        img.save(large_img_path, 'JPEG', quality=95)
+        self.assertGreater(large_img_path.stat().st_size, 10240)
+
+        target_path = self.test_dir / "large_out.jpg"
+        result = process_image_core(
+            filepath=large_img_path,
+            target_path=target_path,
+            quality=70,
+            output_format='JPEG',
+            skip_if_larger=False
+        )
+        self.assertEqual(result.status, 'success')
+        # 讀取產出的 JPEG，檢查 info 中是否含有 progressive = True
+        with Image.open(target_path) as out_img:
+            self.assertTrue(out_img.info.get('progressive', False))
+
+    def test_convert_to_webp_skip_if_larger(self):
+        """測試 images_to_webp 在啟用 skip_if_larger 且體積膨脹時會跳過轉換"""
+        from images_to_webp import convert_to_webp
+        import random
+        # 建立一張充滿隨機雜訊的低品質 JPEG，這張圖在轉換為高品質 WebP 時體積必定會膨脹
+        img = Image.new('RGB', (50, 50))
+        pixels = [(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)) for _ in range(2500)]
+        img.putdata(pixels)
+        small_jpg = self.test_dir / "noise_comp.jpg"
+        img.save(small_jpg, 'JPEG', quality=30)
+
+        result = convert_to_webp(
+            filepath=small_jpg,
+            root_dir=self.test_dir,
+            target_root=self.test_dir,
+            quality=95, # 高品質轉檔 → 體積必定會膨脹
+            overwrite=True,
+            dry_run=False,
+            lossless=False,
+            keep_exif=False,
+            skip_if_larger=True # 啟用防膨脹
+        )
+        self.assertEqual(result.status, 'size_skip')
+
 
 if __name__ == '__main__':
     unittest.main()

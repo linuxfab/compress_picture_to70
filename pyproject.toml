@@ -1,6 +1,6 @@
 [project]
 name = "compress-picture-to70"
-version = "8.3.0"
+version = "8.4.0"
 description = "批量圖片壓縮工具，支援並行處理與 EXIF 保留"
 readme = "README.md"
 requires-python = ">=3.12"

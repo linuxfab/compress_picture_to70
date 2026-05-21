@@ -1,5 +1,25 @@
 # Agent Logs
 
+- 2026-05-21 19:15
+  - 重點: v8.4.0 — 進階影像效能、透明通道融合與 TUI 動態檔名顯示優化
+  - 影響: 
+    - `utils.py`:
+      - (1) 色彩通道融合：當 `RGBA` / `LA` 圖片轉換為不支援透明的 `JPEG` 時，自動融合白色背景，解決透明像素轉成黑色斑駁的問題。
+      - (2) JPEG 漸進式寫入：大於 10KB 的 JPEG 自動啟用 `progressive=True` 提高壓縮效益。
+      - (3) WebP 最優壓縮：轉 WebP 時預設使用 `method=6` 以追求最密實大小。
+      - (4) 互動進度條動態檔名：`run_pipeline` 管線中，動態更新進度條 description 為剛處理完的檔案名稱，提升終端互動體驗。
+      - (5) 版本號同步至 `8.4.0`。
+    - `images_to_webp.py`:
+      - CLI 參數引入 `--skip-if-larger`，能有效防止高壓縮率 JPEG 轉 WebP 時體積反而膨脹，並完整傳遞給 WebP 處理管線。
+    - `tests/test_image_logic.py`:
+      - 新增 `test_process_image_core_rgba_to_jpeg_alpha_blending` 驗證透明與白底混合；
+      - 新增 `test_process_image_core_progressive_jpeg` 驗證 progressive 屬性；
+      - 新增 `test_convert_to_webp_skip_if_larger` 使用隨機雜訊 JPEG 測試 WebP 防膨脹機制。
+    - `pyproject.toml`:
+      - 同步專案版本為 `8.4.0`。
+  - 結果: 大幅提升了圖片轉換成 JPEG 時的色彩還原美感，進一步提高了 JPEG 與 WebP 壓縮率，提供更動感專業的進度條終端體驗，單元測試數量提升至 27 個且 100% 全數通過。
+  - 更新者: Antigravity Agent
+
 - 2026-05-20 22:10
   - 重點: 優化 `images_to_webp.py` 的 nested 目錄過濾，將排除邏輯下沉至遍歷階段進行高效剪枝
   - 影響: 

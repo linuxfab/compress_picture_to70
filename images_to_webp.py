@@ -18,7 +18,8 @@ def convert_to_webp(
     filepath: Path, root_dir: Path, target_root: Path, quality: int, 
     overwrite: bool, dry_run: bool, lossless: bool, keep_exif: bool,
     skip_if_newer: bool = False, scale: float = 1.0, in_place: bool = False,
-    min_size_bytes: int | None = None, max_size_bytes: int | None = None
+    min_size_bytes: int | None = None, max_size_bytes: int | None = None,
+    skip_if_larger: bool = False
 ) -> FileResult:
     """將單張圖片轉換為 WebP 並另存新檔"""
     try:
@@ -58,7 +59,7 @@ def convert_to_webp(
             scale=scale,
             output_format='WEBP',
             lossless=lossless,
-            skip_if_larger=False,  # 轉檔通常不論大小都要轉
+            skip_if_larger=skip_if_larger,
             file_stat=f_stat
         )
 
@@ -85,6 +86,7 @@ def main():
     parser.add_argument('-o', '--overwrite', action='store_true', help='覆蓋已存在檔案')
     parser.add_argument('-l', '--lossless', action='store_true', help='無損壓縮')
     parser.add_argument('-e', '--keep-exif', action='store_true', help='保留 EXIF')
+    parser.add_argument('--skip-if-larger', action='store_true', help='若 WebP 大於原圖則捨棄變更')
 
     args = parser.parse_args()
     setup_logger(verbose=args.verbose)
@@ -149,7 +151,8 @@ def main():
         quality=args.quality, overwrite=args.overwrite, dry_run=args.dry_run,
         lossless=args.lossless, keep_exif=args.keep_exif, skip_if_newer=args.skip_if_newer,
         scale=args.scale, in_place=args.in_place,
-        min_size_bytes=min_size, max_size_bytes=max_size
+        min_size_bytes=min_size, max_size_bytes=max_size,
+        skip_if_larger=args.skip_if_larger
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="跨格式轉換")

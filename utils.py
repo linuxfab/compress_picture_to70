@@ -16,7 +16,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable, Iterable
 import argparse
 
-__version__ = "8.3.0"
+__version__ = "8.4.0"
 
 # 引入 Rich 函式庫做終端機視覺化美化
 from rich.console import Console
@@ -209,10 +209,10 @@ def run_pipeline(
                 futures = {executor.submit(worker_fn, f): f for f in files}
 
                 for future in as_completed(futures):
+                    filepath = futures[future]
                     try:
                         result = future.result()
                     except Exception as e:
-                        filepath = futures[future]
                         result = FileResult('failed', f"子程序異常 {filepath.name}: {e}")
                     
                     # 如果失敗，將紅色的 Alert 印在進度條上方而不破壞版面
@@ -234,6 +234,8 @@ def run_pipeline(
                     else:
                         summary.failed += 1
                     
+                    # 動態更新進度條的描述，顯示當前剛處理完的檔案名稱
+                    progress.update(task_id, description=f" [cyan]{label}中: {filepath.name}")
                     # 更新進度表
                     progress.advance(task_id)
         except KeyboardInterrupt:
@@ -436,17 +438,34 @@ def process_image_core(
 
         exif_data = get_exif_data(img) if keep_exif else None
 
-        # 色彩模式標準化
-        if img.mode in ('CMYK', 'P', 'RGBA') and output_format in ('JPEG', 'JPG'):
+        # 色彩模式標準化與透明背景融合
+        if img.mode in ('RGBA', 'LA') and output_format in ('JPEG', 'JPG'):
+            bg_color = (255, 255, 255) if img.mode == 'RGBA' else 255
+            background = Image.new(img.mode[:-1] if img.mode == 'RGBA' else 'L', img.size, bg_color)
+            if img.mode == 'RGBA':
+                background.paste(img, mask=img.split()[3])
+                img = background.convert('RGB')
+            else:
+                background.paste(img, mask=img.split()[1])
+                img = background.convert('RGB')
+        elif img.mode in ('CMYK', 'P') and output_format in ('JPEG', 'JPG'):
             img = img.convert('RGB')
         elif img.mode in ('CMYK', 'P') and output_format in ('WEBP', 'AVIF'):
             img = img.convert('RGB')
 
         # 準備儲存參數
         save_kwargs = {'optimize': True}
-        if output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
+        if output_format in ('JPEG', 'JPG'):
             if not lossless:
                 save_kwargs['quality'] = quality
+            # 漸進式 JPEG 參數 (通常檔案大於 10KB 才有額外壓縮效益)
+            if original_size > 10240:
+                save_kwargs['progressive'] = True
+        elif output_format in ('WEBP', 'AVIF'):
+            if not lossless:
+                save_kwargs['quality'] = quality
+                if output_format == 'WEBP':
+                    save_kwargs['method'] = 6  # 啟用最慢但品質最好的 WebP 壓縮方式
 
         if lossless and output_format in ('WEBP', 'AVIF'):
             save_kwargs['lossless'] = True
