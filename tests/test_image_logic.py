@@ -295,6 +295,52 @@ class TestImageLogic(unittest.TestCase):
         )
         self.assertEqual(result.status, 'size_skip')
 
+    def test_tune_quality_for_target_size(self):
+        """測試動態品質二分逼近輔助函數"""
+        from utils import tune_quality_for_target_size
+        img = Image.new('RGB', (150, 150), color='green')
+        # 測試目標大小
+        target_size = 2000 # 2KB
+        save_kwargs = {'optimize': True}
+        best_q = tune_quality_for_target_size(img, target_size, 'JPEG', save_kwargs)
+        
+        # 驗證得到的品質是否合理 (40 <= best_q <= 95)
+        self.assertTrue(40 <= best_q <= 95)
+        
+        # 使用得到的最佳品質存檔，驗證大小應小於或接近目標大小
+        buf = __import__('io')
+        b = buf.BytesIO()
+        save_kwargs['quality'] = best_q
+        img.save(b, 'JPEG', **save_kwargs)
+        size = b.tell()
+        b.close()
+        self.assertLessEqual(size, target_size + 1024)
+
+    def test_process_image_core_target_size(self):
+        """測試 process_image_core 中帶入 target_size_bytes 的壓縮控制"""
+        large_img_path = self.test_dir / "target_size_test.jpg"
+        # 建立一張 300x300 的大一點的圖
+        img = Image.new('RGB', (300, 300), color='orange')
+        img.save(large_img_path, 'JPEG', quality=95)
+        orig_size = large_img_path.stat().st_size
+        
+        target_path = self.test_dir / "target_size_out.jpg"
+        # 設定目標大小為原始大小的 40%
+        target_limit = int(orig_size * 0.4)
+        
+        result = process_image_core(
+            filepath=large_img_path,
+            target_path=target_path,
+            quality=90,
+            output_format='JPEG',
+            skip_if_larger=False,
+            target_size_bytes=target_limit
+        )
+        self.assertEqual(result.status, 'success')
+        self.assertTrue(target_path.exists())
+        # 新的大小應明顯小於原圖，且接近 target_limit (或小於 target_limit)
+        self.assertLess(target_path.stat().st_size, orig_size)
+
 
 if __name__ == '__main__':
     unittest.main()

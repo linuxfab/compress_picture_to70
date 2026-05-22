@@ -19,7 +19,7 @@ def convert_to_webp(
     overwrite: bool, dry_run: bool, lossless: bool, keep_exif: bool,
     skip_if_newer: bool = False, scale: float = 1.0, in_place: bool = False,
     min_size_bytes: int | None = None, max_size_bytes: int | None = None,
-    skip_if_larger: bool = False
+    skip_if_larger: bool = False, target_size_bytes: int | None = None
 ) -> FileResult:
     """將單張圖片轉換為 WebP 並另存新檔"""
     try:
@@ -60,7 +60,8 @@ def convert_to_webp(
             output_format='WEBP',
             lossless=lossless,
             skip_if_larger=skip_if_larger,
-            file_stat=f_stat
+            file_stat=f_stat,
+            target_size_bytes=target_size_bytes
         )
 
         if result.status == 'success' and in_place and not dry_run:
@@ -98,9 +99,13 @@ def main():
     if not directory or not (args.lossless or validate_quality(args.quality)):
         return
 
+    if args.lossless and args.target_size:
+        console.print("[bold yellow]警告：--lossless (無損 WebP) 與 --target-size 不能同時使用，目標大小限制將被忽略。[/bold yellow]")
+
     try:
         min_size = parse_size_to_bytes(args.min_size)
         max_size = parse_size_to_bytes(args.max_size)
+        target_size = parse_size_to_bytes(args.target_size)
     except ValueError as e:
         console.print(f"[bold red]{e}[/bold red]")
         return
@@ -112,12 +117,13 @@ def main():
     else:
         out_dir_path = Path(args.out_dir) if args.out_dir else root_path / "webp_output"
 
-    filter_str = build_filter_info(min_size, max_size, args.scale)
+    filter_str = build_filter_info(min_size, max_size, args.scale, target_size)
 
+    target_size_desc = f" | [bold magenta]目標大小[/bold magenta]: {args.target_size}" if args.target_size else ""
     welcome_str = (
         f"[來源] [bold cyan]來源掃描[/bold cyan]: {directory}\n"
         f"[輸出] [bold magenta]輸出位置[/bold magenta]: {out_dir_path if not args.in_place else '[原地轉換並刪除原檔]'}\n"
-        f"[設定] [bold yellow]模式[/bold yellow]: {'無損' if args.lossless else f'有損 ({args.quality}%)'} | [bold green]並發[/bold green]: {args.workers}{filter_str}"
+        f"[設定] [bold yellow]模式[/bold yellow]: {'無損' if args.lossless else f'有損 ({args.quality}%)'}{target_size_desc} | [bold green]並發[/bold green]: {args.workers}{filter_str}"
     )
     console.print(Panel.fit(welcome_str, title=f"[bold]圖片轉 WebP 工具 v{__version__}[/bold]"))
 
@@ -152,7 +158,7 @@ def main():
         lossless=args.lossless, keep_exif=args.keep_exif, skip_if_newer=args.skip_if_newer,
         scale=args.scale, in_place=args.in_place,
         min_size_bytes=min_size, max_size_bytes=max_size,
-        skip_if_larger=args.skip_if_larger
+        skip_if_larger=args.skip_if_larger, target_size_bytes=target_size
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="跨格式轉換")

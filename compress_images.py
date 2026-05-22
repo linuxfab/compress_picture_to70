@@ -19,7 +19,8 @@ def compress_image(
     filepath: Path, root_dir: Path, out_dir: Path | None, 
     quality: int, overwrite: bool, keep_exif: bool, dry_run: bool,
     skip_if_newer: bool = False, scale: float = 1.0, in_place: bool = False,
-    min_size_bytes: int | None = None, max_size_bytes: int | None = None
+    min_size_bytes: int | None = None, max_size_bytes: int | None = None,
+    target_size_bytes: int | None = None
 ) -> FileResult:
     """壓縮單張圖片並另存新檔"""
     try:
@@ -29,7 +30,11 @@ def compress_image(
         except Exception as e:
             return FileResult('failed', f"讀取檔案狀態失敗 {filepath.name}: {e}")
 
-        suffix = f"_{quality}%"
+        # 如果有 target_size_bytes，後綴顯示 target size，否則顯示 quality
+        if target_size_bytes is not None:
+            suffix = f"_{format_size(target_size_bytes).replace(' ', '')}"
+        else:
+            suffix = f"_{quality}%"
         
         # BMP 直接跳過 (雖然 PIL 支援，但通常壓縮效果差)
         if filepath.suffix.lower() == '.bmp':
@@ -81,7 +86,8 @@ def compress_image(
             scale=scale,
             output_format=output_format,
             force_convert_from={'.heic', '.avif'},
-            file_stat=f_stat
+            file_stat=f_stat,
+            target_size_bytes=target_size_bytes
         )
 
         # in_place 且格式轉換時 (e.g. .heic → .jpg)，刪除原始檔案避免孤兒檔
@@ -120,18 +126,20 @@ def main():
     try:
         min_size = parse_size_to_bytes(args.min_size)
         max_size = parse_size_to_bytes(args.max_size)
+        target_size = parse_size_to_bytes(args.target_size)
     except ValueError as e:
         console.print(f"[bold red]{e}[/bold red]")
         return
     root_path = Path(directory)
     out_dir_path = Path(args.out_dir) if args.out_dir else None
 
-    filter_str = build_filter_info(min_size, max_size, args.scale)
+    filter_str = build_filter_info(min_size, max_size, args.scale, target_size)
 
     welcome_str = (
         f"[來源] [bold cyan]目標來源[/bold cyan]: {directory}\n"
         f"[輸出] [bold magenta]輸出位置[/bold magenta]: {args.out_dir if args.out_dir else ('[原地覆蓋]' if args.in_place else '[原地後綴]')}\n"
-        f"[設定] [bold yellow]品質[/bold yellow]: {args.quality}% | [bold green]並發[/bold green]: {args.workers}{filter_str}"
+        f"[設定] [bold yellow]品質[/bold yellow]: {args.quality}%"
+        f"{f' | [bold magenta]目標大小[/bold magenta]: {args.target_size}' if args.target_size else ''} | [bold green]並發[/bold green]: {args.workers}{filter_str}"
     )
     console.print(Panel.fit(welcome_str, title=f"[bold]圖片壓縮工具 v{__version__}[/bold]"))
 
@@ -143,7 +151,7 @@ def main():
         compress_image, root_dir=root_path, out_dir=out_dir_path,
         quality=args.quality, overwrite=args.overwrite, keep_exif=args.keep_exif,
         dry_run=args.dry_run, skip_if_newer=args.skip_if_newer, scale=args.scale, in_place=args.in_place,
-        min_size_bytes=min_size, max_size_bytes=max_size
+        min_size_bytes=min_size, max_size_bytes=max_size, target_size_bytes=target_size
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="壓縮與格式化")

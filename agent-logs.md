@@ -1,5 +1,23 @@
 # Agent Logs
 
+- 2026-05-22 22:00
+  - 重點: v8.5.0 — 圖片目標大小自動逼近 (Target-Size Auto-Tuning)
+  - 影響: 
+    - `utils.py`:
+      - (1) 新增 `tune_quality_for_target_size` 輔助函數，以記憶體二分搜尋法快速逼近最優 quality。
+      - (2) 修改 `process_image_core`，支援 `target_size_bytes` 參數，在儲存前自動調校 quality。
+      - (3) 修改 `create_base_parser`，在基礎 parser 中整合 `-T` / `--target-size` 參數。
+      - (4) 修改 `build_filter_info`，將目標大小限制動態融合到歡迎/過濾面板。
+      - (5) 版本號同步更新至 `8.5.0`。
+    - `compress_images.py`:
+      - 支援 `target_size` 解析，並將其傳遞給單張圖片處理管線；動態調整輸出後綴名稱以直觀反映目標大小。
+    - `images_to_webp.py`:
+      - 整合 `target_size` 參數，若同時開啟 `--lossless` 則印出警告，將目標大小傳遞至 WebP 轉換核心。
+    - `tests/test_image_logic.py`:
+      - 新增 `test_tune_quality_for_target_size` 與 `test_process_image_core_target_size`，全方位驗證二分搜尋收斂精度與大小約束功能。
+  - 結果: 成功賦予圖片批次處理工具「目標體積導向」的極致壓縮能力，免除人工盲目猜測品質參數的痛點，29 個測試全數綠燈通過。
+  - 更新者: Antigravity Agent
+
 - 2026-05-21 19:15
   - 重點: v8.4.0 — 進階影像效能、透明通道融合與 TUI 動態檔名顯示優化
   - 影響: 

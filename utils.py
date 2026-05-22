@@ -16,7 +16,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable, Iterable
 import argparse
 
-__version__ = "8.4.0"
+__version__ = "8.5.0"
 
 # 引入 Rich 函式庫做終端機視覺化美化
 from rich.console import Console
@@ -59,6 +59,35 @@ def setup_logger(verbose: bool = False) -> None:
     
     if not logger.handlers:
         logger.addHandler(handler)
+
+
+def tune_quality_for_target_size(img: Image.Image, target_bytes: int, output_format: str, save_kwargs: dict) -> int:
+    """使用記憶體二分搜尋法動態逼近符合大小上限的最佳品質 (不超過目標體積，且畫質最高)"""
+    low, high = 40, 95
+    best_q = 70
+    # 複製 save_kwargs 避免副作用
+    kwargs = save_kwargs.copy()
+    
+    # 5 次迭代即可在 40-95 之間精確收斂
+    for _ in range(5):
+        mid = (low + high) // 2
+        kwargs['quality'] = mid
+        buf = io.BytesIO()
+        try:
+            img.save(buf, format=output_format, **kwargs)
+            size = buf.tell()
+        except Exception:
+            size = float('inf')
+        finally:
+            buf.close()
+        
+        if size <= target_bytes:
+            best_q = mid
+            low = mid + 1  # 嘗試看能不能品質更好
+        else:
+            high = mid - 1 # 太大了，降低品質
+            
+    return best_q
 
 
 @dataclass
@@ -331,6 +360,8 @@ def create_base_parser(description: str, epilog: str) -> argparse.ArgumentParser
                         help='最小檔案限制 (低於此大小將被跳過)，範例: 500KB, 2MB')
     parser.add_argument('-M', '--max-size', '--max', type=str, default=None,
                         help='最大檔案限制 (高於此大小將被跳過)，範例: 10MB')
+    parser.add_argument('-T', '--target-size', '--target', type=str, default=None,
+                        help='目標檔案大小 (自動調校有損壓縮 quality 以逼近此大小)，範例: 1MB, 500KB')
     parser.add_argument('--skip-if-newer', action='store_true',
                         help='如果目標檔案存在且比來源檔案新則跳過 (適用於增量備份)')
     parser.add_argument('--scale', type=float, default=1.0,
@@ -375,8 +406,8 @@ def validate_scale(scale: float) -> bool:
     return True
 
 
-def build_filter_info(min_size: int | None, max_size: int | None, scale: float) -> str:
-    """組裝過濾條件的顯示字串，供 Welcome Panel 使用"""
+def build_filter_info(min_size: int | None, max_size: int | None, scale: float, target_size: int | None = None) -> str:
+    """組裝過濾與目標條件的顯示字串，供 Welcome Panel 使用"""
     parts: list[str] = []
     if min_size:
         parts.append(f">= {format_size(min_size)}")
@@ -384,7 +415,9 @@ def build_filter_info(min_size: int | None, max_size: int | None, scale: float) 
         parts.append(f"<= {format_size(max_size)}")
     if scale < 1.0:
         parts.append(f"縮放 {scale:.0%}")
-    return f" | [bold red]過濾[/bold red]: {', '.join(parts)}" if parts else ""
+    if target_size:
+        parts.append(f"目標大小 {format_size(target_size)}")
+    return f" | [bold red]過濾/目標[/bold red]: {', '.join(parts)}" if parts else ""
 
 
 # --- 新增：圖片處理核心邏輯 ---
@@ -406,7 +439,8 @@ def process_image_core(
     lossless: bool = False,
     skip_if_larger: bool = True,
     force_convert_from: set[str] | None = None,
-    file_stat: os.stat_result | None = None
+    file_stat: os.stat_result | None = None,
+    target_size_bytes: int | None = None
 ) -> FileResult:
     """
     圖片處理核心邏輯：
@@ -453,8 +487,29 @@ def process_image_core(
         elif img.mode in ('CMYK', 'P') and output_format in ('WEBP', 'AVIF'):
             img = img.convert('RGB')
 
+        # 決定最終格式
+        if not output_format:
+            output_format = FORMAT_MAP.get(target_path.suffix.lower(), 'JPEG')
+
         # 準備儲存參數
         save_kwargs = {'optimize': True}
+        
+        if lossless and output_format in ('WEBP', 'AVIF'):
+            save_kwargs['lossless'] = True
+
+        # 如果設定了目標大小且非無損，進行動態品質自動逼近
+        if target_size_bytes is not None and not lossless and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
+            base_kwargs = save_kwargs.copy()
+            if output_format == 'WEBP':
+                base_kwargs['method'] = 6
+            if original_size > 10240 and output_format in ('JPEG', 'JPG'):
+                base_kwargs['progressive'] = True
+            if exif_data:
+                base_kwargs['exif'] = exif_data
+            
+            # 使用二分搜尋法動態逼近
+            quality = tune_quality_for_target_size(img, target_size_bytes, output_format, base_kwargs)
+
         if output_format in ('JPEG', 'JPG'):
             if not lossless:
                 save_kwargs['quality'] = quality
@@ -467,15 +522,8 @@ def process_image_core(
                 if output_format == 'WEBP':
                     save_kwargs['method'] = 6  # 啟用最慢但品質最好的 WebP 壓縮方式
 
-        if lossless and output_format in ('WEBP', 'AVIF'):
-            save_kwargs['lossless'] = True
-
         if exif_data:
             save_kwargs['exif'] = exif_data
-
-        # 決定最終格式
-        if not output_format:
-            output_format = FORMAT_MAP.get(target_path.suffix.lower(), 'JPEG')
 
         # 先存到記憶體緩衝區檢查大小
         buf = io.BytesIO()

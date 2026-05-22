@@ -1,9 +1,13 @@
-# 圖片批量壓縮與轉檔工具 v8.4.0
+# 圖片批量壓縮與轉檔工具 v8.5.0
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
-- 最後更新時間: 2026-05-21
+- 最後更新時間: 2026-05-22
 
 遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。本版本進行了進階的影像效能優化與 TUI 終端體驗提升。
+
+## 最新改進 (v8.5.0)
+- **圖片目標大小自動逼近 (Target-Size Auto-Tuning)**：引進 `-T` / `--target-size` 參數。在有損壓縮 (JPEG/WebP/AVIF) 時，自動採用記憶體二分搜尋法進行逼近計算，使輸出體積不高於目標限制，同時保留最優影像畫質。
+- **測試套件擴充**：單元測試從 27 個擴展至 29 個（全數通過），完整覆蓋了二分逼近演算法與核心壓縮流程的目標大小限制功能。
 
 ## 最新改進 (v8.4.0)
 - **透明通道融合 (Alpha Blending)**：當 `RGBA` / `LA` 圖片轉換為不支援透明的 `JPEG` 時，自動融合白色背景，解決透明像素被轉成黑色斑斑點點的問題。
@@ -81,6 +85,7 @@ uv run compress-img <目錄路徑> [選項]
 | `--in-place` | 原地覆蓋：直接取代原始檔案 (不加後綴) | 否 |
 | `-m, --min-size` | 最小檔案過濾 (如 500KB, 1MB) | (無) |
 | `-M, --max-size` | 最大檔案過濾 | (無) |
+| `-T, --target-size`| 目標檔案大小限制 (如 500KB, 1MB)，自動逼近最優 quality | (無) |
 | `-o, --overwrite` | 覆蓋已存在的壓縮檔 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
 | `-w, --workers` | Process 數量 (並行) | 自動偵測 CPU 核心數 (上限 8) |
@@ -100,6 +105,7 @@ uv run images-to-webp <目錄路徑> [選項]
 | `-q, --quality` | WebP 壓縮品質 1-100 | 80 |
 | `--in-place` | 原地轉換：轉換成功後刪除原始檔案 | 否 |
 | `-l, --lossless` | 使用無損壓縮 | 否 |
+| `-T, --target-size`| 目標檔案大小限制 (如 500KB, 1MB)，自動逼近最優 quality | (無) |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
 | `--skip-if-larger` | 若 WebP 體積大於原圖則捨棄變更 | 否 |
 
