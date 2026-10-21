@@ -16,7 +16,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable, Iterable
 import argparse
 
-__version__ = "8.5.0"
+__version__ = "8.5.1"
 
 # 引入 Rich 函式庫做終端機視覺化美化
 from rich.console import Console
@@ -38,8 +38,8 @@ logger = logging.getLogger("img_tools")
 # 支援的圖片格式
 SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.heic', '.avif'}
 
-# 用於偵測已壓縮檔案的 regex pattern (e.g. _70%, _50%)
-COMPRESSED_SUFFIX_PATTERN = re.compile(r'_\d+%$')
+# 用於偵測已壓縮檔案的 regex pattern (e.g. _70%, _50%, _500.0KB, _1.0MB)
+COMPRESSED_SUFFIX_PATTERN = re.compile(r'_(\d+%|[\d.]+(B|KB|MB|GB))$', re.IGNORECASE)
 
 # 格式映射表 (副檔名 → PIL format string)
 FORMAT_MAP = {
@@ -61,10 +61,18 @@ def setup_logger(verbose: bool = False) -> None:
         logger.addHandler(handler)
 
 
-def tune_quality_for_target_size(img: Image.Image, target_bytes: int, output_format: str, save_kwargs: dict) -> int:
+def tune_quality_for_target_size(
+    img: Image.Image,
+    target_bytes: int,
+    output_format: str,
+    save_kwargs: dict,
+    return_data: bool = False,
+) -> int | tuple[int, bytes | None]:
     """使用記憶體二分搜尋法動態逼近符合大小上限的最佳品質 (不超過目標體積，且畫質最高)"""
     low, high = 40, 95
-    best_q = 70
+    best_q = low
+    best_data: bytes | None = None
+    fallback_data: bytes | None = None
     # 複製 save_kwargs 避免副作用
     kwargs = save_kwargs.copy()
     
@@ -76,17 +84,24 @@ def tune_quality_for_target_size(img: Image.Image, target_bytes: int, output_for
         try:
             img.save(buf, format=output_format, **kwargs)
             size = buf.tell()
+            cur_data = buf.getvalue() if return_data else None
         except Exception:
             size = float('inf')
+            cur_data = None
         finally:
             buf.close()
         
         if size <= target_bytes:
             best_q = mid
+            best_data = cur_data
             low = mid + 1  # 嘗試看能不能品質更好
         else:
+            if mid == 40:
+                fallback_data = cur_data
             high = mid - 1 # 太大了，降低品質
             
+    if return_data:
+        return best_q, (best_data if best_data is not None else fallback_data)
     return best_q
 
 
@@ -472,6 +487,16 @@ def process_image_core(
 
         exif_data = get_exif_data(img) if keep_exif else None
 
+        # 決定最終格式 (必須在色彩模式轉換前完成)
+        if not output_format:
+            output_format = FORMAT_MAP.get(target_path.suffix.lower(), 'JPEG')
+        else:
+            output_format = output_format.upper()
+
+        # 若為 P (調色盤) 模式且含透明資訊，先轉為 RGBA 以保留透明通道供後續白底融合或透明輸出
+        if img.mode == 'P' and 'transparency' in img.info:
+            img = img.convert('RGBA')
+
         # 色彩模式標準化與透明背景融合
         if img.mode in ('RGBA', 'LA') and output_format in ('JPEG', 'JPG'):
             bg_color = (255, 255, 255) if img.mode == 'RGBA' else 255
@@ -482,14 +507,8 @@ def process_image_core(
             else:
                 background.paste(img, mask=img.split()[1])
                 img = background.convert('RGB')
-        elif img.mode in ('CMYK', 'P') and output_format in ('JPEG', 'JPG'):
+        elif img.mode in ('CMYK', 'P') and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
             img = img.convert('RGB')
-        elif img.mode in ('CMYK', 'P') and output_format in ('WEBP', 'AVIF'):
-            img = img.convert('RGB')
-
-        # 決定最終格式
-        if not output_format:
-            output_format = FORMAT_MAP.get(target_path.suffix.lower(), 'JPEG')
 
         # 準備儲存參數
         save_kwargs = {'optimize': True}
@@ -497,42 +516,35 @@ def process_image_core(
         if lossless and output_format in ('WEBP', 'AVIF'):
             save_kwargs['lossless'] = True
 
-        # 如果設定了目標大小且非無損，進行動態品質自動逼近
-        if target_size_bytes is not None and not lossless and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
-            base_kwargs = save_kwargs.copy()
-            if output_format == 'WEBP':
-                base_kwargs['method'] = 6
-            if original_size > 10240 and output_format in ('JPEG', 'JPG'):
-                base_kwargs['progressive'] = True
-            if exif_data:
-                base_kwargs['exif'] = exif_data
-            
-            # 使用二分搜尋法動態逼近
-            quality = tune_quality_for_target_size(img, target_size_bytes, output_format, base_kwargs)
-
         if output_format in ('JPEG', 'JPG'):
-            if not lossless:
-                save_kwargs['quality'] = quality
             # 漸進式 JPEG 參數 (通常檔案大於 10KB 才有額外壓縮效益)
             if original_size > 10240:
                 save_kwargs['progressive'] = True
-        elif output_format in ('WEBP', 'AVIF'):
-            if not lossless:
-                save_kwargs['quality'] = quality
-                if output_format == 'WEBP':
-                    save_kwargs['method'] = 6  # 啟用最慢但品質最好的 WebP 壓縮方式
+        elif output_format == 'WEBP' and not lossless:
+            save_kwargs['method'] = 6  # 啟用最慢但品質最好的 WebP 壓縮方式
 
         if exif_data:
             save_kwargs['exif'] = exif_data
 
-        # 先存到記憶體緩衝區檢查大小
-        buf = io.BytesIO()
-        img.save(buf, format=output_format, **save_kwargs)
-        new_size = buf.tell()
+        data: bytes | None = None
 
-        # 一次性取出資料並釋放 buffer，避免後續重複 copy
-        data = buf.getvalue()
-        buf.close()
+        # 如果設定了目標大小且非無損，進行動態品質自動逼近並快取結果，避免重複編碼
+        if target_size_bytes is not None and not lossless and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
+            quality, data = tune_quality_for_target_size(
+                img, target_size_bytes, output_format, save_kwargs, return_data=True
+            )
+
+        if not lossless and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
+            save_kwargs['quality'] = quality
+
+        # 先存到記憶體緩衝區檢查大小 (若二分搜尋已快取則不重複編碼)
+        if data is None:
+            buf = io.BytesIO()
+            img.save(buf, format=output_format, **save_kwargs)
+            data = buf.getvalue()
+            buf.close()
+
+        new_size = len(data)
 
         # 檢查是否越壓越大 (排除特定轉檔需求)
         orig_ext = filepath.suffix.lower()
@@ -590,4 +602,3 @@ def process_image_core(
         return FileResult('failed', f"無法辨識圖片: {filepath.name}")
     except Exception as e:
         return FileResult('failed', f"處理失敗 {filepath.name}: {e}")
-

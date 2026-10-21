@@ -99,6 +99,45 @@ class TestImageLogic(unittest.TestCase):
         with Image.open(target_path) as img:
             self.assertEqual(img.mode, 'RGB')
 
+    def test_process_image_core_rgba_to_jpeg_auto_output_format(self):
+        """當 output_format=None 時，RGBA PNG 轉 .jpg 也應先自動推斷為 JPEG 並正確轉為 RGB"""
+        rgba_path = self.test_dir / "rgba_auto.png"
+        img = Image.new('RGBA', (30, 30), color=(0, 255, 0, 0))
+        img.save(rgba_path, 'PNG')
+
+        target_path = self.test_dir / "rgba_auto_out.jpg"
+        result = process_image_core(
+            filepath=rgba_path,
+            target_path=target_path,
+            quality=80,
+            output_format=None,  # 測試自動偵測順序
+            skip_if_larger=False,
+        )
+        self.assertEqual(result.status, 'success')
+        with Image.open(target_path) as out_img:
+            self.assertEqual(out_img.mode, 'RGB')
+            self.assertEqual(out_img.getpixel((0, 0)), (255, 255, 255))
+
+    def test_process_image_core_palette_transparency_to_jpeg(self):
+        """P (調色盤) 模式含透明通道轉 JPEG 時，透明處應融合白底而非變黑"""
+        p_path = self.test_dir / "palette_trans.png"
+        rgba_img = Image.new('RGBA', (20, 20), color=(0, 0, 0, 0))
+        p_img = rgba_img.convert('P')
+        p_img.save(p_path, 'PNG', transparency=0)
+
+        target_path = self.test_dir / "palette_trans_out.jpg"
+        result = process_image_core(
+            filepath=p_path,
+            target_path=target_path,
+            quality=90,
+            output_format='JPEG',
+            skip_if_larger=False,
+        )
+        self.assertEqual(result.status, 'success')
+        with Image.open(target_path) as out_img:
+            self.assertEqual(out_img.mode, 'RGB')
+            self.assertEqual(out_img.getpixel((0, 0)), (255, 255, 255))
+
     def test_process_image_core_unidentified(self):
         """非圖片檔案應回傳 failed"""
         garbage_path = self.test_dir / "not_an_image.jpg"
@@ -246,9 +285,7 @@ class TestImageLogic(unittest.TestCase):
         self.assertEqual(result.status, 'success')
         # 讀取轉出的 JPEG，透明處因為與白底混合，其顏色應為白色 (255, 255, 255)
         with Image.open(target_path) as out_img:
-            pixels = list(out_img.getdata())
-            # 每一個像素都應該是白色 (255, 255, 255) 而非黑色 (0, 0, 0)
-            self.assertEqual(pixels[0], (255, 255, 255))
+            self.assertEqual(out_img.getpixel((0, 0)), (255, 255, 255))
 
     def test_process_image_core_progressive_jpeg(self):
         """測試當 JPEG 大於 10KB 時，是否正確啟用 progressive 寫入"""
@@ -296,7 +333,7 @@ class TestImageLogic(unittest.TestCase):
         self.assertEqual(result.status, 'size_skip')
 
     def test_tune_quality_for_target_size(self):
-        """測試動態品質二分逼近輔助函數"""
+        """測試動態品質二分逼近輔助函數及保底品質 40"""
         from utils import tune_quality_for_target_size
         img = Image.new('RGB', (150, 150), color='green')
         # 測試目標大小
@@ -315,6 +352,12 @@ class TestImageLogic(unittest.TestCase):
         size = b.tell()
         b.close()
         self.assertLessEqual(size, target_size + 1024)
+
+        # 測試極小目標大小 (例如 1 byte) 時，應退回最低品質 40 而非 70，且能透過 return_data 拿到快取 bytes
+        min_q, cached_bytes = tune_quality_for_target_size(img, 1, 'JPEG', {'optimize': True}, return_data=True)
+        self.assertEqual(min_q, 40)
+        self.assertIsNotNone(cached_bytes)
+        self.assertGreater(len(cached_bytes), 0)
 
     def test_process_image_core_target_size(self):
         """測試 process_image_core 中帶入 target_size_bytes 的壓縮控制"""
@@ -344,4 +387,3 @@ class TestImageLogic(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

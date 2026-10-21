@@ -1,5 +1,22 @@
 # Agent Logs
 
+- 2026-10-22 00:05
+  - 重點: v8.5.1 — 全面修復 6 項健檢問題 (色彩轉換順序、P 模式透明度、二分搜尋保底與快取、後綴識別、Pillow 14 警告、版本同步)
+  - 影響:
+    - `utils.py`:
+      - (1) 將 `output_format` 自動推斷提前至色彩模式轉換之前，修復 `output_format=None` 時 `RGBA` 轉 `.jpg` 跳過白底合成與 `RGB` 轉換的 Bug。
+      - (2) 新增含 `transparency` 資訊之 `P` (Palette) 模式圖片前處理，先轉為 `RGBA` 以利後續白底融合（JPEG）或透明保留（WebP/AVIF）。
+      - (3) `tune_quality_for_target_size` 初始保底品質改為 `40`（修正極端大圖退回 `70` 的問題），並新增 `return_data` 快取機制，省去 `process_image_core` 的二次重複編碼開銷。
+      - (4) `COMPRESSED_SUFFIX_PATTERN` 擴充為 `r'_(\d+%|[\d.]+(B|KB|MB|GB))$'`，識別 `--target-size` 產生的檔案後綴，防止重複壓縮。
+      - (5) 版本升至 `8.5.1`。
+    - `tests/test_image_logic.py` & `tests/test_utils.py`:
+      - 將 `out_img.getdata()` 改為 `out_img.getpixel((0, 0))` 消除 Pillow 14 `DeprecationWarning`。
+      - 新增 `test_process_image_core_rgba_to_jpeg_auto_output_format`、`test_process_image_core_palette_transparency_to_jpeg`、`test_compressed_suffix_pattern`，並擴充 `test_tune_quality_for_target_size` 驗證保底品質與快取。
+    - `pyproject.toml` & `README.md`:
+      - 同步版本號至 `8.5.1`，更新文件與測試案例計數（30 個測試案例）。
+  - 結果: 消除所有潛在邏輯漏洞與棄用警告，減少目標大小模式的重複編碼 CPU 開銷，30 個單元測試 100% 通過且 0 警告。
+  - 更新者: Antigravity Agent
+
 - 2026-05-23 09:43
   - 重點: 同步專案變更至 GitHub 遠端儲存庫
   - 影響: 

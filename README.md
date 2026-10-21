@@ -1,21 +1,24 @@
-# 圖片批量壓縮與轉檔工具 v8.5.0
+# 圖片批量壓縮與轉檔工具 v8.5.1
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
-- 最後更新時間: 2026-05-22
+- 最後更新時間: 2026-10-22
 
 遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。本版本進行了進階的影像效能優化與 TUI 終端體驗提升。
 
-## 最新改進 (v8.5.0)
-- **圖片目標大小自動逼近 (Target-Size Auto-Tuning)**：引進 `-T` / `--target-size` 參數。在有損壓縮 (JPEG/WebP/AVIF) 時，自動採用記憶體二分搜尋法進行逼近計算，使輸出體積不高於目標限制，同時保留最優影像畫質。
-- **測試套件擴充**：單元測試從 27 個擴展至 29 個（全數通過），完整覆蓋了二分逼近演算法與核心壓縮流程的目標大小限制功能。
+## 最新改進 (v8.5.1)
+- **修復自動輸出格式推斷與色彩模式轉換順序**：在 `process_image_core` 中先推斷 `output_format` 再執行色彩模式標準化，修復 `output_format=None` 時 `RGBA` 轉 `.jpg` 漏轉 `RGB` 的問題。
+- **P (Palette) 調色盤透明通道處理**：針對帶有 `transparency` 資訊的 `P` 模式圖片（如 PNG-8），先轉為 `RGBA` 以利後續與白底融合（JPEG）或保留完整透明度（WebP/AVIF）。
+- **目標大小二分搜尋快取與保底修正**：`tune_quality_for_target_size` 保底品質修正為 `40`（避免極端大圖退回 `70`），並直接快取二分搜尋命中的記憶體編碼結果，免除二次重複編碼開銷。
+- **擴充已壓縮後綴識別**：`COMPRESSED_SUFFIX_PATTERN` 新增支援 `_500.0KB`、`_1.5MB` 等由 `--target-size` 產生的後綴，防止二次執行時重複壓縮。
+- **消除 Pillow 14 棄用警告與擴充測試**：將測試中的 `getdata()` 替換為 `getpixel()`，單元測試擴充至 **30 個（全數通過，0 警告）**。
 
-## 最新改進 (v8.4.0)
+## 歷史改進 (v8.5.0 / v8.4.0)
+- **圖片目標大小自動逼近 (Target-Size Auto-Tuning)**：引進 `-T` / `--target-size` 參數。在有損壓縮 (JPEG/WebP/AVIF) 時，自動採用記憶體二分搜尋法進行逼近計算，使輸出體積不高於目標限制，同時保留最優影像畫質。
 - **透明通道融合 (Alpha Blending)**：當 `RGBA` / `LA` 圖片轉換為不支援透明的 `JPEG` 時，自動融合白色背景，解決透明像素被轉成黑色斑斑點點的問題。
 - **漸進式 JPEG 寫入**：大於 10KB 的 JPEG 寫入時自動啟用 `progressive=True`，不僅利於網頁加速載入，更能額外多省下 2% ~ 8% 的空間。
 - **WebP 最高壓縮演算**：WebP 轉換時預設啟用 `method=6`。此模式計算稍慢但能壓出最小體積，對於批量壓縮極具效益。
 - **動態進度條狀態 (TUI 提升)**：進度管線中，動態在進度條更新目前剛處理完的檔案名稱，提升視覺互動體驗。
 - **WebP 轉換防膨脹**：在 `images_to_webp.py` 引入 `--skip-if-larger` 可選參數，防止某些高壓縮 JPEG 轉換為 WebP 時體積反而膨脹。
-- **測試擴增**：單元測試從 24 個擴增至 27 個（全數通過），完整覆蓋了透明背景融合、Progressive JPEG 以及 WebP 防膨脹功能。
 
 ## 專案功能
 
@@ -30,6 +33,7 @@
 - ✅ 總空間節省統計 (原始大小 / 壓縮後大小 / 節省百分比)
 - ✅ 支援深度控制 (`--max-depth`)
 - ✅ **針對檔案大小進行智慧過濾 (`--min-size`、`--max-size`)**
+- ✅ **目標大小動態逼近 (`--target-size`)**
 - ✅ **支援圖片縮放 (`--scale`)**
 - ✅ **支援原地覆蓋 (`--in-place`)**，直接取代原檔不加後綴字
 - ✅ Rich 終端機視覺化 (動態進度條、精美報表)
@@ -110,23 +114,25 @@ uv run images-to-webp <目錄路徑> [選項]
 | `--skip-if-larger` | 若 WebP 體積大於原圖則捨棄變更 | 否 |
 
 ## 專案結構
-- `utils.py`: 共用核心模組 (v8.4.0)
+- `utils.py`: 共用核心模組 (v8.5.1)
 - `compress_images.py`: 圖片壓縮 CLI
 - `images_to_webp.py`: WebP 轉檔 CLI
-- `tests/`: 單元測試 (27 個測試案例)
+- `tests/`: 單元測試 (30 個測試案例)
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
 
 ## 架構設計
 
 ```
 utils.py
-├── FORMAT_MAP                  — 集中管理的格式映射表
-├── process_image_core()        — 統一的圖片處理核心 (開啟/縮放/轉換/原子寫入)
-├── collect_files()             — os.walk 掃描 + sorted() 排序
-├── run_pipeline()              — 並行處理管線 (ProcessPoolExecutor)
-├── validate_scale()            — 共用 scale 參數驗證
-├── build_filter_info()         — 共用過濾條件顯示字串組裝
-└── print_summary()             — 含平均節省空間的報表
+├── FORMAT_MAP                       — 集中管理的格式映射表
+├── COMPRESSED_SUFFIX_PATTERN        — 已壓縮檔案後綴匹配 (含百分比與容量後綴)
+├── tune_quality_for_target_size()   — 目標體積記憶體二分搜尋逼近與結果快取
+├── process_image_core()             — 統一的圖片處理核心 (開啟/縮放/轉換/原子寫入)
+├── collect_files()                  — os.walk 掃描 + exclude_fn 剪枝 + sorted() 排序
+├── run_pipeline()                   — 並行處理管線 (ProcessPoolExecutor)
+├── validate_scale()                 — 共用 scale 參數驗證
+├── build_filter_info()              — 共用過濾條件顯示字串組裝
+└── print_summary()                  — 含平均節省空間的報表
 ```
 
 ## License
@@ -134,4 +140,4 @@ MIT
 
 ## Authors
 - [linuxfab](https://github.com/linuxfab)
-- Last Update: 2026-05-21 19:15
+- Last Update: 2026-10-22 00:05

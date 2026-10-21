@@ -6,7 +6,7 @@ from pathlib import Path
 from utils import (
     format_size, validate_quality, validate_scale, build_filter_info,
     FileResult, parse_size_to_bytes, collect_files,
-    SUPPORTED_FORMATS, FORMAT_MAP
+    SUPPORTED_FORMATS, FORMAT_MAP, COMPRESSED_SUFFIX_PATTERN
 )
 
 class TestUtils(unittest.TestCase):
@@ -59,6 +59,14 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(FORMAT_MAP['.png'], 'PNG')
         self.assertEqual(FORMAT_MAP['.webp'], 'WEBP')
         self.assertEqual(FORMAT_MAP['.avif'], 'AVIF')
+
+    def test_compressed_suffix_pattern(self):
+        """驗證百分比後綴與 target-size 容量後綴皆能被識別為已壓縮"""
+        self.assertIsNotNone(COMPRESSED_SUFFIX_PATTERN.search("photo_70%"))
+        self.assertIsNotNone(COMPRESSED_SUFFIX_PATTERN.search("photo_500.0KB"))
+        self.assertIsNotNone(COMPRESSED_SUFFIX_PATTERN.search("photo_1.5MB"))
+        self.assertIsNotNone(COMPRESSED_SUFFIX_PATTERN.search("photo_800B"))
+        self.assertIsNone(COMPRESSED_SUFFIX_PATTERN.search("photo_normal"))
 
     def test_file_result(self):
         result = FileResult('success', 'test', 100, 50)
