@@ -1,7 +1,7 @@
 # 圖片批量壓縮與轉檔工具 v8.5.1
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
-- 最後更新時間: 2026-10-22
+- 最後更新時間: 2026-11-02
 
 遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。本版本進行了進階的影像效能優化與 TUI 終端體驗提升。
 
@@ -140,4 +140,4 @@ MIT
 
 ## Authors
 - [linuxfab](https://github.com/linuxfab)
-- Last Update: 2026-10-22 00:05
+- Last Update: 2026-11-02 00:02
