@@ -1,5 +1,14 @@
 # Agent Logs
 
+- 2026-11-12 19:34
+  - 重點: 將 `feat/v8.9-ux-improvements` 合併回主分支 `master`
+  - 影響:
+    - 執行 `git merge --no-ff feat/v8.9-ux-improvements`：無衝突合併 v8.9.0 使用體驗升級（11 個檔案，+360/-70）。
+    - 合併後於 `master` 重新執行測試：83 passed。
+    - 推送 `master` 至 GitHub。
+  - 結果: v8.9.0 正式進入主分支，本地與遠端同步；P0/P1/P2/P3 全部改良均已落地 `master`。
+  - 更新者: Antigravity Agent
+
 - 2026-11-12 19:33
   - 重點: v8.9.0 — 使用體驗 (UX) 全面升級 (Ctrl+C 立即停止、-v 除錯輸出、dry-run 獨立統計、拖曳路徑去引號、--report CSV 報表)
   - 影響:
