@@ -221,11 +221,11 @@ def _encode_still_image(
     original_size: int,
     target_size_bytes: int | None,
     png_quantize: bool = False,
-) -> tuple[bytes, str | None]:
+) -> tuple[bytes, str | None, int | None]:
     """
     單張靜態圖片的完整編碼流程：
     取 EXIF/ICC → EXIF 轉正 → 縮放 → 色彩模式標準化 → (目標大小逼近 / 自動縮小) → 編碼
-    回傳 (bytes, 提醒訊息或 None)
+    回傳 (bytes, 提醒訊息或 None, 實際使用的 quality 或 None)
     """
     exif_data = get_exif_data(img) if keep_exif else None
     icc_profile = get_icc_profile(img)
@@ -262,7 +262,7 @@ def _encode_still_image(
                 q_img = _quantize_png(img, colors=colors)
                 data = _encode_bytes(q_img, 'PNG', save_kwargs)
                 if len(data) <= target_size_bytes:
-                    return data, None
+                    return data, None, None
             # 減色至 32 色仍超過目標大小，嘗試漸進縮放
             cur_img = img
             cur_ratio = 1.0
@@ -273,12 +273,12 @@ def _encode_still_image(
                 cur_img = img.resize((nw, nh), Image.Resampling.LANCZOS)
                 data = _encode_bytes(_quantize_png(cur_img, colors=64), 'PNG', save_kwargs)
                 if len(data) <= target_size_bytes:
-                    return data, f"PNG 減色並縮放至 {cur_ratio:.0%} 以符合目標大小"
+                    return data, f"PNG 減色並縮放至 {cur_ratio:.0%} 以符合目標大小", None
             return data, (
                 f"PNG 減色並縮放後仍大於目標大小 "
                 f"({format_size(len(data))} > {format_size(target_size_bytes)})"
-            )
-        return _encode_bytes(_quantize_png(img, colors=256), 'PNG', save_kwargs), None
+            ), None
+        return _encode_bytes(_quantize_png(img, colors=256), 'PNG', save_kwargs), None, None
 
     # 有損格式目標體積自動逼近
     if target_size_bytes is not None and not lossless and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
@@ -286,7 +286,7 @@ def _encode_still_image(
             img, target_size_bytes, output_format, save_kwargs, return_data=True
         )
         if data is not None and len(data) <= target_size_bytes:
-            return data, None
+            return data, None, tuned_q
 
         # 連品質 40 都還是超過目標大小時，自動漸進縮小尺寸 (最多 3 次)
         min_kwargs = save_kwargs.copy()
@@ -299,18 +299,20 @@ def _encode_still_image(
             resized = img.resize((nw, nh), Image.Resampling.LANCZOS)
             data = _encode_bytes(resized, output_format, min_kwargs)
             if len(data) <= target_size_bytes:
-                return data, f"已降至品質 {tuned_q} 並自動縮放至 {cur_ratio:.0%} 以符合目標大小"
+                return data, f"已降至品質 {tuned_q} 並自動縮放至 {cur_ratio:.0%} 以符合目標大小", tuned_q
 
         assert data is not None
         return data, (
             f"已降至品質 {tuned_q} 並自動縮放至 {cur_ratio:.0%}，體積仍略大於目標 "
             f"({format_size(len(data))} > {format_size(target_size_bytes)})"
-        )
+        ), tuned_q
 
+    used_q: int | None = None
     if not lossless and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
         save_kwargs['quality'] = quality
+        used_q = quality
 
-    return _encode_bytes(img, output_format, save_kwargs), None
+    return _encode_bytes(img, output_format, save_kwargs), None, used_q
 
 
 def _atomic_write(target_path: Path, data: bytes) -> None:
@@ -392,6 +394,7 @@ def process_image_core(
             effective_target_size = None
 
         warn_note: str | None = None
+        quality_used: int | None = None
         src = Image.open(filepath)
         try:
             if is_animated_image(src):
@@ -400,14 +403,17 @@ def process_image_core(
                         'skipped',
                         f"跳過動畫圖片 ({getattr(src, 'n_frames', '?')} 格)：輸出格式 {output_format} "
                         f"不支援動畫，已保留原檔 → {filepath.name}",
+                        original_size=original_size,
                         warn=True,
+                        target_path=str(target_path),
                     )
                 exif_data = get_exif_data(src) if keep_exif else None
                 icc_profile = get_icc_profile(src)
                 data = _encode_animated_webp(src, quality, scale, lossless, exif_data, icc_profile)
+                quality_used = None if lossless else quality
             else:
                 src.load()
-                data, warn_note = _encode_still_image(
+                data, warn_note, quality_used = _encode_still_image(
                     src, output_format, quality, keep_exif, scale,
                     lossless, original_size, effective_target_size,
                     png_quantize=png_quantize,
@@ -418,15 +424,29 @@ def process_image_core(
         new_size = len(data)
 
         if skip_if_larger and new_size >= original_size and not should_force:
-            return FileResult('size_skip', f"檔案 {filepath.name} 越壓越大，捨棄變更")
+            return FileResult(
+                'size_skip',
+                f"檔案 {filepath.name} 越壓越大，捨棄變更",
+                original_size=original_size,
+                new_size=new_size,
+                quality_used=quality_used,
+                target_path=str(target_path),
+            )
 
         target_path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write(target_path, data)
         os.utime(target_path, (orig_stat.st_atime, orig_stat.st_mtime))
 
         if warn_note:
-            return FileResult('success', f"{filepath.name}: {warn_note}", original_size, new_size, warn=True)
-        return FileResult('success', "OK", original_size, new_size)
+            return FileResult(
+                'success', f"{filepath.name}: {warn_note}",
+                original_size, new_size, warn=True,
+                quality_used=quality_used, target_path=str(target_path),
+            )
+        return FileResult(
+            'success', "OK", original_size, new_size,
+            quality_used=quality_used, target_path=str(target_path),
+        )
 
     except UnidentifiedImageError:
         return FileResult('failed', f"無法辨識圖片: {filepath.name}")

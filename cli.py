@@ -10,7 +10,7 @@ from typing import Callable, Iterable
 
 from ui import console
 
-__version__ = "8.8.0"
+__version__ = "8.9.0"
 
 
 def parse_size_to_bytes(size_str: str | None) -> int | None:
@@ -191,26 +191,33 @@ def create_base_parser(description: str, epilog: str) -> argparse.ArgumentParser
                         help='縮放比例 (0.1 - 1.0)，例如 0.5 表示長寬減半 (預設: 1.0)')
     parser.add_argument('--in-place', action='store_true',
                         help='原地覆蓋：直接取代原始檔案 (不加後綴，且會自動刪除/覆蓋原檔，請小心使用)')
+    parser.add_argument('--report', type=str, default=None,
+                        help='匯出逐檔處理結果的 CSV 報表路徑，範例: --report out.csv')
     parser.add_argument('--version', action='version', version=f'%(prog)s v{__version__}')
     return parser
 
 
 def resolve_directory(args: argparse.Namespace) -> str | None:
-    """解析目錄路徑 (支援互動模式)，回傳 None 表示使用者未輸入或路徑無效"""
+    """解析目錄路徑 (支援互動模式，並自動移除拖曳路徑帶入的引號)，回傳 None 表示路徑無效"""
     if not args.directory:
-        args.directory = input("請輸入目標來源目錄路徑：").strip()
-        if not args.directory:
-            console.print("[bold red]未輸入目錄，程式結束。[/bold red]")
-            return None
+        raw_input = input("請輸入目標來源目錄路徑：")
+    else:
+        raw_input = args.directory
 
-    target = Path(args.directory)
+    cleaned = raw_input.strip().strip('"').strip("'").strip()
+    args.directory = cleaned
+    if not cleaned:
+        console.print("[bold red]未輸入目錄，程式結束。[/bold red]")
+        return None
+
+    target = Path(cleaned)
     if not target.exists():
         console.print(f"[bold red]錯誤：路徑不存在 → {target}[/bold red]")
         return None
     if not target.is_dir():
         console.print(f"[bold red]錯誤：指定的路徑不是一個目錄 → {target}[/bold red]")
         return None
-    return str(args.directory)
+    return str(target)
 
 
 def validate_quality(quality: int) -> bool:

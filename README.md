@@ -1,11 +1,19 @@
-# 圖片批量壓縮與轉檔工具 v8.8.0
+# 圖片批量壓縮與轉檔工具 v8.9.0
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
-- 最後更新時間: 2026-11-12 19:23
+- 最後更新時間: 2026-11-12 19:33
 
-遍歷目錄及所有子目錄，支援圖片壓縮與 WebP / AVIF 轉檔。本版本著重於色彩正確性、目標大小搜尋精準度與 PNG 減色量化支援。
+遍歷目錄及所有子目錄，支援圖片壓縮與 WebP / AVIF 轉檔。本版本專注於終端操作體驗、互動模式容錯與處理報表匯出。
 
-## 最新改進 (v8.8.0) — 畫質與色彩正確性修復
+## 最新改進 (v8.9.0) — 使用體驗 (UX) 全面升級
+- **Ctrl+C 立即停止**：`run_pipeline()` 改為顯式管理 `ProcessPoolExecutor` 生命週期，捕捉到 `KeyboardInterrupt` 時呼叫 `executor.shutdown(wait=False, cancel_futures=True)` 立即取消所有排隊中的任務，不再卡住等待。
+- **`-v / --verbose` 除錯輸出啟用**：啟用 `-v` 時會在進度條上方即時列出每個被跳過或處理的檔案詳細狀態與原因，方便排查大小過濾、已存在或 BMP 跳過問題。
+- **預覽模式 (`--dry-run`) 獨立統計**：`ProcessingSummary` 新增 `dry_run` 計數，結算報表顯示獨立的「預覽 (將處理)」列，不再誤算進「跳過」。
+- **拖曳路徑自動去除引號**：`resolve_directory()` 自動清理互動模式或命令列參數中前後帶有的單/雙引號（如 Windows 終端機拖曳資料夾產生的 `"D:\Photos"`）。
+- **新增 `--report <檔案.csv>` 逐檔處理報表**：支援於執行結束後匯出 UTF-8 BOM CSV 報表（Windows Excel 直接開啟不亂碼），記錄 `filepath`、`target_path`、`status`、`original_size`、`new_size`、`saved_bytes`、`quality_used` 與 `message`。
+- **測試**：新增 `tests/test_ux_v89.py`（7 個案例），總計 **83 個測試全數通過**。
+
+## 歷史改進 (v8.8.0) — 畫質與色彩正確性修復
 - **完整保留 ICC 色彩描述檔 (`get_icc_profile`)**：在 JPEG、PNG、WebP（含動畫 WebP）與 AVIF 輸出時自動保留原圖 `icc_profile`（即使未啟用 `--keep-exif` 亦保留），解決 iPhone Display P3 等廣色域照片轉檔後色彩偏淡的問題。
 - **全面標準化特殊色彩模式 (`_normalize_image_mode`)**：
   - 16-bit 灰階（`I;16*`）先行等比例縮放至 8-bit `L`，防止直接轉換被截斷為全白 `255`。
@@ -128,6 +136,8 @@ uv run compress-img <目錄路徑> [選項]
 | `-w, --workers` | Process 數量 (並行) | 自動偵測 CPU 核心數 (上限 8) |
 | `--version` | 顯示版本號 | — |
 | `-n, --dry-run` | 預覽模式：僅列出待處理檔案 | 否 |
+| `-v, --verbose` | 顯示詳細除錯與跳過原因 | 否 |
+| `--report` | 匯出逐檔處理結果至 CSV 報表 (如 `--report out.csv`) | (無) |
 | `-d, --max-depth`| 最大遞迴深度 (0=不進入子目錄) | 無限 |
 
 ### images-to-webp (WebP 轉檔)
@@ -162,10 +172,10 @@ uv run images-to-webp <目錄路徑> [選項]
 - `ui.py`: 終端機 UI 與 `ProcessPoolExecutor` 並行管線
 - `cli.py`: CLI 共用參數解析、目錄掃描與衝突偵測
 - `image_core.py`: 影像編碼核心與嚴格原子寫入
-- `utils.py`: 共用模組相容匯出層 (v8.8.0)
+- `utils.py`: 共用模組相容匯出層 (v8.9.0)
 - `compress_images.py`: 圖片壓縮 CLI
 - `images_to_webp.py`: WebP / AVIF 轉檔 CLI
-- `tests/`: 單元測試 (76 個測試案例；涵蓋工具函式、影像邏輯、資料安全、架構與畫質測試)
+- `tests/`: 單元測試 (83 個測試案例；涵蓋工具函式、影像邏輯、資料安全、架構、畫質與 UX 測試)
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
 
 ## 架構設計
@@ -200,4 +210,4 @@ MIT
 
 ## Authors
 - [linuxfab](https://github.com/linuxfab)
-- Last Update: 2026-11-12 19:23
+- Last Update: 2026-11-12 19:33

@@ -52,6 +52,9 @@ class _DummyExecutor:
             fut.set_exception(e)
         return fut
 
+    def shutdown(self, wait=True, cancel_futures=False):
+        pass
+
 
 class TestModuleSplitAndCompatibility(unittest.TestCase):
     def test_split_modules_and_utils_facade(self):
@@ -143,14 +146,15 @@ class TestRunPipeline(unittest.TestCase):
         self.assertEqual(summary.total_original, 1000)
         self.assertEqual(summary.total_new, 400)
 
-    def test_pipeline_dry_run_counts_as_skipped(self):
+    def test_pipeline_dry_run_counts_separately(self):
         files = [Path("a.jpg"), Path("b.jpg")]
         with patch("ui.ProcessPoolExecutor", _DummyExecutor):
             summary = run_pipeline(
                 files, lambda p: FileResult('dry_run', f"[預覽] {p.name}"),
                 workers=1, dry_run=True,
             )
-        self.assertEqual(summary.skipped, 2)
+        self.assertEqual(summary.dry_run, 2)
+        self.assertEqual(summary.skipped, 0)
         self.assertEqual(summary.success, 0)
 
 
