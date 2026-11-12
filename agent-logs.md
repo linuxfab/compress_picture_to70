@@ -1,5 +1,21 @@
 # Agent Logs
 
+- 2026-11-12 19:08
+  - 重點: v8.6.0 — 修復 4 項資料遺失風險 (同名衝突覆蓋、原地覆蓋既有檔、動畫只剩第一格、壓縮工具重複處理輸出目錄)
+  - 影響:
+    - `utils.py`:
+      - 新增 `assign_conflict_tags()`：主程序一次性偵測輸出檔名衝突 (不分大小寫)，衝突檔案加上 `_原副檔名` 標籤 (必要時加數字)，消除互相覆蓋與多程序寫入競態；新增 `print_conflict_notice()` 列出改名清單。
+      - 新增 `make_output_dir_excluder()`：輸出目錄位於來源內時產生 `collect_files` 剪枝函式，以路徑前綴 (含分隔符) 精確比對。
+      - `process_image_core()` 重構為分派器：拆出 `_encode_still_image()` 與 `_encode_animated_webp()`；新增 `is_animated_image()`、`ANIMATED_OUTPUT_FORMATS`；動畫輸出 WebP 時逐格保留 duration/loop，其他格式跳過並保留原檔；以 `try/finally` 確保來源 file handle 在寫入前關閉 (修正 Windows 原地覆寫動畫檔時被占用)。
+      - `FileResult` 新增 `warn` 欄位，`run_pipeline()` 以黃字顯示需注意的跳過訊息。
+      - 版本升至 `8.6.0`。
+    - `compress_images.py`: 抽出 `build_suffix()`、`build_target_path()` 供主程序與 worker 共用；新增 `conflict_tags` 參數；原地模式只允許覆寫自己 (目標為其他既有檔案時需 `-o`)；套用輸出目錄剪枝。
+    - `images_to_webp.py`: 抽出 `build_webp_target()`；新增 `conflict_tags` 參數；原地模式目標 `.webp` 已存在時需 `-o`；改用共用的 `make_output_dir_excluder()` (移除會誤排除任意深度同名資料夾的目錄名稱排除)。
+    - `tests/test_safety_v86.py`: 新增 23 個回歸測試 (衝突標籤、原地保護、動畫保留/縮放/跳過/原地覆寫、輸出目錄剪枝與 out2 前綴誤判、兩次執行不產生 out/out)。
+    - `README.md`、`pyproject.toml`: 版本 8.6.0、新增衝突命名規則表、更新架構圖與參數說明。
+  - 結果: 53 個測試全數通過；CLI 端對端驗證 a.jpg + a.png 原地轉換產生 a_jpg.webp / a_png.webp，壓縮工具重複執行不再掃描輸出目錄。工作於分支 `fix/v8.6-safety`。
+  - 更新者: Antigravity Agent
+
 - 2026-11-02 00:02
   - 重點: 還原單元測試目錄並同步 uv.lock (8.5.1)
   - 影響:
