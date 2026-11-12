@@ -16,7 +16,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable, Iterable
 import argparse
 
-__version__ = "8.5.1"
+__version__ = "8.6.0"
 
 # 引入 Rich 函式庫做終端機視覺化美化
 from rich.console import Console
@@ -26,7 +26,7 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich import box
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageOps, ImageSequence, UnidentifiedImageError
 
 import pillow_heif
 pillow_heif.register_heif_opener()
@@ -112,6 +112,7 @@ class FileResult:
     message: str
     original_size: int = 0
     new_size: int = 0
+    warn: bool = False  # True 時進度條上方會以黃字顯示 message (例如動畫圖片被跳過)
 
 
 @dataclass
@@ -212,6 +213,109 @@ def collect_files(
     return sorted(files)
 
 
+def _norm_key(path: Path | str) -> str:
+    """產生路徑比較用的正規化鍵值 (一律不分大小寫，以 Windows/macOS 最嚴格的檔案系統為準)"""
+    return os.path.normcase(os.path.normpath(os.path.abspath(str(path)))).lower()
+
+
+def make_output_dir_excluder(
+    root: Path, out_dir: Path | None
+) -> Callable[[Path], bool] | None:
+    """
+    若輸出目錄位於來源目錄內部，回傳一個給 collect_files(exclude_fn=...) 用的判斷函式，
+    在遍歷階段直接剪除輸出目錄，避免重複處理自己產生的檔案 (out/out/...)。
+    輸出目錄不在來源內、或等於來源目錄 (原地模式) 時回傳 None。
+    """
+    if out_dir is None:
+        return None
+    try:
+        out_key = _norm_key(out_dir.resolve())
+        root_key = _norm_key(root.resolve())
+    except OSError:
+        return None
+
+    if out_key == root_key:
+        return None  # 原地模式：不能把整個來源目錄排除
+    if not out_key.startswith(root_key.rstrip(os.sep) + os.sep):
+        return None  # 輸出目錄在來源之外，不需要排除
+
+    def _exclude(dir_path: Path) -> bool:
+        try:
+            key = _norm_key(dir_path.resolve())
+        except OSError:
+            return False
+        return key == out_key or key.startswith(out_key + os.sep)
+
+    return _exclude
+
+
+def assign_conflict_tags(
+    files: list[Path],
+    target_fn: Callable[[Path, str], Path],
+) -> dict[str, str]:
+    """
+    在送進多程序管線「之前」，於主程序一次性偵測輸出檔名衝突並分配唯一標籤。
+
+    - target_fn(filepath, tag) 必須回傳該檔案在指定 tag 下的輸出路徑 (tag='' 代表原始命名)。
+    - 衝突的定義：兩個以上來源檔案對應到同一個輸出路徑 (不分大小寫)，
+      例如 a.jpg + a.png → a.webp，或 IMG.heic + IMG.jpg → IMG.jpg。
+    - 分配規則：
+        1. 群組中若有「副檔名本來就與輸出相同」的檔案 (例如原地壓縮的 IMG.jpg)，它保留原始命名；
+           若有多個，取路徑排序第一個。
+        2. 其餘成員改用原副檔名當標籤，例如 IMG.heic → IMG_heic.jpg、a.png → a_png.webp。
+        3. 若標籤後仍與其他輸出撞名，則依序加上數字 (png2, png3 ...) 直到唯一。
+    - 回傳 {str(filepath): tag}，只包含需要改名的檔案；無衝突時為空 dict。
+      由於只含衝突檔案，傳給 worker 時的 pickle 成本極低，且可完全消除多程序同時寫入同一檔案的競態。
+    """
+    groups: dict[str, list[Path]] = {}
+    for f in files:
+        groups.setdefault(_norm_key(target_fn(f, '')), []).append(f)
+
+    used: set[str] = set()
+    pending: list[Path] = []
+
+    for key in sorted(groups):
+        members = groups[key]
+        if len(members) == 1:
+            used.add(key)
+            continue
+        natural = sorted(
+            (m for m in members if m.suffix.lower() == target_fn(m, '').suffix.lower()),
+            key=str,
+        )
+        keeper = natural[0] if natural else None
+        if keeper is not None:
+            used.add(key)
+        pending.extend(m for m in members if m is not keeper)
+
+    tags: dict[str, str] = {}
+    for m in sorted(pending, key=str):
+        base = m.suffix.lstrip('.') or 'dup'
+        tag, n = base, 2
+        while _norm_key(target_fn(m, tag)) in used:
+            tag = f"{base}{n}"
+            n += 1
+        used.add(_norm_key(target_fn(m, tag)))
+        tags[str(m)] = tag
+    return tags
+
+
+def print_conflict_notice(tags: dict[str, str], target_fn: Callable[[Path, str], Path], limit: int = 10) -> None:
+    """在 Welcome Panel 後提示使用者有哪些檔案因同名衝突而改名"""
+    if not tags:
+        return
+    console.print(
+        f"[bold yellow]注意：偵測到 {len(tags)} 個檔案的輸出檔名互相衝突，"
+        f"已自動加上原副檔名標籤避免互相覆蓋：[/bold yellow]"
+    )
+    for i, (src, tag) in enumerate(sorted(tags.items())):
+        if i >= limit:
+            console.print(f"[yellow]  ... 以及其他 {len(tags) - limit} 個檔案[/yellow]")
+            break
+        src_path = Path(src)
+        console.print(f"[yellow]  {src_path.name} → {target_fn(src_path, tag).name}[/yellow]")
+
+
 def run_pipeline(
     files: list[Path],
     worker_fn: Callable[[Path], FileResult],
@@ -265,6 +369,9 @@ def run_pipeline(
                     # DRY RUN 模式要把每條紀錄印出來
                     elif result.status == 'dry_run':
                         progress.console.print(f"[dim]{result.message}[/dim]")
+                    # 需要使用者注意的跳過 (例如動畫圖片、目標已存在的衝突)
+                    elif result.warn:
+                        progress.console.print(f"[yellow]{result.message}[/yellow]")
 
                     # 統計
                     if result.status == 'success':
@@ -444,6 +551,142 @@ def get_exif_data(img: Image.Image) -> bytes | None:
     except Exception:
         return None
 
+
+# 支援動畫輸出的格式 (其餘格式遇到多影格來源會被跳過，避免只剩第一格)
+ANIMATED_OUTPUT_FORMATS = {'WEBP'}
+
+
+def is_animated_image(img: Image.Image) -> bool:
+    """判斷圖片是否為多影格動畫 (動畫 WebP / APNG / 動畫 AVIF 等)"""
+    return bool(getattr(img, 'is_animated', False)) and getattr(img, 'n_frames', 1) > 1
+
+
+def _encode_animated_webp(
+    src: Image.Image,
+    quality: int,
+    scale: float,
+    lossless: bool,
+    exif_data: bytes | None,
+) -> bytes:
+    """
+    逐格讀取動畫並重新編碼為動畫 WebP，保留每一格的顯示時間 (duration) 與循環次數 (loop)。
+    - 每格統一轉為 RGBA，避免調色盤/透明度在影格間不一致。
+    - 動畫不套用 --target-size 二分搜尋 (多影格反覆編碼成本過高)，直接使用指定 quality。
+    - 使用 method=4：多影格下 method=6 會慢數倍，壓縮率差異極小。
+    """
+    frames: list[Image.Image] = []
+    durations: list[int] = []
+    default_duration = int(src.info.get('duration') or 100)
+
+    for frame in ImageSequence.Iterator(src):
+        f = frame.convert('RGBA')
+        if 0.1 <= scale < 1.0:
+            f = f.resize(
+                (max(1, int(f.width * scale)), max(1, int(f.height * scale))),
+                Image.Resampling.LANCZOS,
+            )
+        frames.append(f)
+        durations.append(int(frame.info.get('duration') or default_duration))
+
+    save_kwargs: dict = {
+        'format': 'WEBP',
+        'save_all': True,
+        'append_images': frames[1:],
+        'duration': durations,
+        'loop': int(src.info.get('loop', 0)),
+    }
+    if lossless:
+        save_kwargs['lossless'] = True
+    else:
+        save_kwargs['quality'] = quality
+        save_kwargs['method'] = 4
+    if exif_data:
+        save_kwargs['exif'] = exif_data
+
+    buf = io.BytesIO()
+    try:
+        frames[0].save(buf, **save_kwargs)
+        return buf.getvalue()
+    finally:
+        buf.close()
+
+
+def _encode_still_image(
+    img: Image.Image,
+    output_format: str,
+    quality: int,
+    keep_exif: bool,
+    scale: float,
+    lossless: bool,
+    original_size: int,
+    target_size_bytes: int | None,
+) -> bytes:
+    """單張靜態圖片的完整編碼流程：EXIF 轉正 → 縮放 → 色彩模式標準化 → (目標大小逼近) → 編碼"""
+    # 修正 EXIF 旋轉問題 (手機照片必備) - 必須在 resize 前
+    img = ImageOps.exif_transpose(img)
+
+    # 縮放處理
+    if 0.1 <= scale < 1.0:
+        new_width = max(1, int(img.width * scale))
+        new_height = max(1, int(img.height * scale))
+        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+    exif_data = get_exif_data(img) if keep_exif else None
+
+    # 若為 P (調色盤) 模式且含透明資訊，先轉為 RGBA 以保留透明通道供後續白底融合或透明輸出
+    if img.mode == 'P' and 'transparency' in img.info:
+        img = img.convert('RGBA')
+
+    # 色彩模式標準化與透明背景融合
+    if img.mode in ('RGBA', 'LA') and output_format in ('JPEG', 'JPG'):
+        bg_color = (255, 255, 255) if img.mode == 'RGBA' else 255
+        background = Image.new(img.mode[:-1] if img.mode == 'RGBA' else 'L', img.size, bg_color)
+        if img.mode == 'RGBA':
+            background.paste(img, mask=img.split()[3])
+            img = background.convert('RGB')
+        else:
+            background.paste(img, mask=img.split()[1])
+            img = background.convert('RGB')
+    elif img.mode in ('CMYK', 'P') and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
+        img = img.convert('RGB')
+
+    # 準備儲存參數
+    save_kwargs: dict = {'optimize': True}
+
+    if lossless and output_format in ('WEBP', 'AVIF'):
+        save_kwargs['lossless'] = True
+
+    if output_format in ('JPEG', 'JPG'):
+        # 漸進式 JPEG 參數 (通常檔案大於 10KB 才有額外壓縮效益)
+        if original_size > 10240:
+            save_kwargs['progressive'] = True
+    elif output_format == 'WEBP' and not lossless:
+        save_kwargs['method'] = 6  # 啟用最慢但品質最好的 WebP 壓縮方式
+
+    if exif_data:
+        save_kwargs['exif'] = exif_data
+
+    data: bytes | None = None
+
+    # 如果設定了目標大小且非無損，進行動態品質自動逼近並快取結果，避免重複編碼
+    if target_size_bytes is not None and not lossless and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
+        quality, data = tune_quality_for_target_size(
+            img, target_size_bytes, output_format, save_kwargs, return_data=True
+        )
+
+    if not lossless and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
+        save_kwargs['quality'] = quality
+
+    # 先存到記憶體緩衝區檢查大小 (若二分搜尋已快取則不重複編碼)
+    if data is None:
+        buf = io.BytesIO()
+        try:
+            img.save(buf, format=output_format, **save_kwargs)
+            data = buf.getvalue()
+        finally:
+            buf.close()
+    return data
+
 def process_image_core(
     filepath: Path,
     target_path: Path,
@@ -459,90 +702,45 @@ def process_image_core(
 ) -> FileResult:
     """
     圖片處理核心邏輯：
-    1. 開啟與縮放
-    2. 色彩空間轉換 (CMYK/P -> RGB)
-    3. 提取 EXIF
+    1. 開啟圖片並判斷是否為動畫
+    2. 動畫：輸出格式支援 (WebP) 則逐格重新編碼；否則跳過並保留原檔，避免只剩第一格
+    3. 靜態：EXIF 轉正 → 縮放 → 色彩空間轉換 → (目標大小逼近) → 編碼
     4. 儲存至緩衝區檢查大小
-    5. 決定是否寫入硬碟
+    5. 決定是否寫入硬碟 (原子寫入)
     """
     try:
         orig_stat = file_stat if file_stat is not None else filepath.stat()
         original_size = orig_stat.st_size
 
-        # 不使用 context manager：exif_transpose / resize 會產生新物件，
-        # 若在 with 內賦值 img = ... 會導致 __exit__ 關閉的是舊物件而非新的，
-        # 且後續操作在 with 外部使用 img 會有潛在風險。
-        # img.load() 呼叫後 PIL 內部已釋放 file handle，安全無虞。
-        img = Image.open(filepath)
-        img.load()  # 強制讀入記憶體，PIL 內部釋放 file handle
-
-        # 修正 EXIF 旋轉問題 (手機照片必備) - 必須在 resize 前
-        img = ImageOps.exif_transpose(img)
-
-        # 縮放處理
-        if 0.1 <= scale < 1.0:
-            new_width = max(1, int(img.width * scale))
-            new_height = max(1, int(img.height * scale))
-            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-        exif_data = get_exif_data(img) if keep_exif else None
-
-        # 決定最終格式 (必須在色彩模式轉換前完成)
+        # 決定最終格式 (必須在色彩模式轉換與動畫判斷前完成)
         if not output_format:
             output_format = FORMAT_MAP.get(target_path.suffix.lower(), 'JPEG')
         else:
             output_format = output_format.upper()
 
-        # 若為 P (調色盤) 模式且含透明資訊，先轉為 RGBA 以保留透明通道供後續白底融合或透明輸出
-        if img.mode == 'P' and 'transparency' in img.info:
-            img = img.convert('RGBA')
-
-        # 色彩模式標準化與透明背景融合
-        if img.mode in ('RGBA', 'LA') and output_format in ('JPEG', 'JPG'):
-            bg_color = (255, 255, 255) if img.mode == 'RGBA' else 255
-            background = Image.new(img.mode[:-1] if img.mode == 'RGBA' else 'L', img.size, bg_color)
-            if img.mode == 'RGBA':
-                background.paste(img, mask=img.split()[3])
-                img = background.convert('RGB')
+        # src 保留原始開檔物件，確保 finally 一定關閉 file handle。
+        # 動畫逐格讀取時檔案會保持開啟；若不先關閉，原地覆蓋 (target == filepath)
+        # 在 Windows 上 os.replace 會因檔案被占用而失敗。
+        src = Image.open(filepath)
+        try:
+            if is_animated_image(src):
+                if output_format not in ANIMATED_OUTPUT_FORMATS:
+                    return FileResult(
+                        'skipped',
+                        f"跳過動畫圖片 ({getattr(src, 'n_frames', '?')} 格)：輸出格式 {output_format} "
+                        f"不支援動畫，已保留原檔 → {filepath.name}",
+                        warn=True,
+                    )
+                exif_data = get_exif_data(src) if keep_exif else None
+                data = _encode_animated_webp(src, quality, scale, lossless, exif_data)
             else:
-                background.paste(img, mask=img.split()[1])
-                img = background.convert('RGB')
-        elif img.mode in ('CMYK', 'P') and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
-            img = img.convert('RGB')
-
-        # 準備儲存參數
-        save_kwargs = {'optimize': True}
-        
-        if lossless and output_format in ('WEBP', 'AVIF'):
-            save_kwargs['lossless'] = True
-
-        if output_format in ('JPEG', 'JPG'):
-            # 漸進式 JPEG 參數 (通常檔案大於 10KB 才有額外壓縮效益)
-            if original_size > 10240:
-                save_kwargs['progressive'] = True
-        elif output_format == 'WEBP' and not lossless:
-            save_kwargs['method'] = 6  # 啟用最慢但品質最好的 WebP 壓縮方式
-
-        if exif_data:
-            save_kwargs['exif'] = exif_data
-
-        data: bytes | None = None
-
-        # 如果設定了目標大小且非無損，進行動態品質自動逼近並快取結果，避免重複編碼
-        if target_size_bytes is not None and not lossless and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
-            quality, data = tune_quality_for_target_size(
-                img, target_size_bytes, output_format, save_kwargs, return_data=True
-            )
-
-        if not lossless and output_format in ('JPEG', 'JPG', 'WEBP', 'AVIF'):
-            save_kwargs['quality'] = quality
-
-        # 先存到記憶體緩衝區檢查大小 (若二分搜尋已快取則不重複編碼)
-        if data is None:
-            buf = io.BytesIO()
-            img.save(buf, format=output_format, **save_kwargs)
-            data = buf.getvalue()
-            buf.close()
+                src.load()  # 強制讀入記憶體
+                data = _encode_still_image(
+                    src, output_format, quality, keep_exif, scale,
+                    lossless, original_size, target_size_bytes,
+                )
+        finally:
+            src.close()
 
         new_size = len(data)
 

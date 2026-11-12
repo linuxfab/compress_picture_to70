@@ -10,16 +10,33 @@ from utils import (
     FileResult, collect_files, run_pipeline, print_summary,
     create_base_parser, resolve_directory, validate_quality, validate_scale,
     parse_size_to_bytes, format_size, build_filter_info, setup_logger, console,
-    SUPPORTED_FORMATS, process_image_core, __version__
+    SUPPORTED_FORMATS, process_image_core,
+    make_output_dir_excluder, assign_conflict_tags, print_conflict_notice,
+    __version__
 )
 from rich.panel import Panel
+
+
+def build_webp_target(filepath: Path, root_dir: Path, target_root: Path, tag: str = '') -> Path:
+    """
+    計算單一來源檔案的 WebP 輸出路徑 (主程序的衝突偵測與 worker 共用同一套規則)。
+    tag 非空時用來區分同名不同副檔名的來源，例如 a.png → a_png.webp。
+    """
+    try:
+        rel_parent = filepath.relative_to(root_dir).parent
+    except ValueError:
+        rel_parent = Path()
+    stem = f"{filepath.stem}_{tag}" if tag else filepath.stem
+    return target_root / rel_parent / f"{stem}.webp"
+
 
 def convert_to_webp(
     filepath: Path, root_dir: Path, target_root: Path, quality: int, 
     overwrite: bool, dry_run: bool, lossless: bool, keep_exif: bool,
     skip_if_newer: bool = False, scale: float = 1.0, in_place: bool = False,
     min_size_bytes: int | None = None, max_size_bytes: int | None = None,
-    skip_if_larger: bool = False, target_size_bytes: int | None = None
+    skip_if_larger: bool = False, target_size_bytes: int | None = None,
+    conflict_tags: dict[str, str] | None = None,
 ) -> FileResult:
     """將單張圖片轉換為 WebP 並另存新檔"""
     try:
@@ -35,21 +52,25 @@ def convert_to_webp(
             return FileResult('skipped', f"跳過 (太小): {filepath.name} ({format_size(file_size)})")
         if max_size_bytes is not None and file_size > max_size_bytes:
             return FileResult('skipped', f"跳過 (太大): {filepath.name} ({format_size(file_size)})")
-        try:
-            rel_path = filepath.relative_to(root_dir)
-        except ValueError:
-            rel_path = Path(filepath.name)
 
-        target_path = target_root / rel_path.with_suffix('.webp')
+        # 1. 決定輸出路徑 (若主程序判定有同名衝突，會帶入唯一標籤)
+        tag = (conflict_tags or {}).get(str(filepath), '')
+        target_path = build_webp_target(filepath, root_dir, target_root, tag)
 
+        # 2. 已存在檢查：原地模式下目標必定是「另一個檔案」(a.jpg → a.webp)，
+        #    若 a.webp 早已存在，必須加 -o 才覆蓋，否則跳過並保留原檔，避免資料遺失。
         if target_path.exists():
+            is_self = in_place and target_path == filepath
             if skip_if_newer and target_path.stat().st_mtime >= f_stat.st_mtime:
                 return FileResult('skipped', f"目標較新: {target_path.name}")
-            elif not overwrite and not in_place:
-                return FileResult('skipped', f"檔案已存在: {target_path.name}")
+            elif not overwrite and not is_self:
+                return FileResult(
+                    'skipped', f"檔案已存在: {target_path.name}",
+                    warn=in_place,  # 原地模式下撞到既有檔案時提醒使用者
+                )
 
         if dry_run:
-            return FileResult('dry_run', f"[預覽] 轉 WebP: {target_path.name} ({format_size(file_size)})")
+            return FileResult('dry_run', f"[預覽] 轉 WebP: {filepath.name} → {target_path.name} ({format_size(file_size)})")
 
         result = process_image_core(
             filepath=filepath,
@@ -127,30 +148,22 @@ def main():
     )
     console.print(Panel.fit(welcome_str, title=f"[bold]圖片轉 WebP 工具 v{__version__}[/bold]"))
 
-    # 排除 webp_output 本身避免遞迴掃描
-    def should_exclude(dir_path: Path) -> bool:
-        try:
-            return dir_path.resolve() == out_dir_path.resolve() or dir_path.resolve().is_relative_to(out_dir_path.resolve())
-        except Exception:
-            return False
-
-    exclude_targets = set()
-    if not args.in_place:
-        try:
-            # 如果輸出目錄是來源目錄的直接子目錄，將其名字加入 exclude_dirs 以優化掃描效能
-            if out_dir_path.parent.resolve() == root_path.resolve():
-                exclude_targets.add(out_dir_path.name)
-        except Exception:
-            pass
-
     # 轉 WebP 工具不需要掃描已經是 WebP 的檔案，避免重複處理與潛在的覆寫
     input_formats = {fmt for fmt in SUPPORTED_FORMATS if fmt != '.webp'}
-    
+
+    # 輸出目錄位於來源內時於遍歷階段剪除 (原地模式下輸出 == 來源，excluder 會回傳 None)
     files = collect_files(
-        root_path, input_formats, exclude_dirs=exclude_targets, 
+        root_path, input_formats,
         max_depth=args.max_depth,
-        exclude_fn=should_exclude if not args.in_place else None
+        exclude_fn=make_output_dir_excluder(root_path, out_dir_path),
     )
+
+    # 在主程序一次性偵測輸出檔名衝突 (例如 a.jpg 與 a.png 都會輸出成 a.webp)
+    def target_fn(f: Path, tag: str) -> Path:
+        return build_webp_target(f, root_path, out_dir_path, tag)
+
+    conflict_tags = assign_conflict_tags(files, target_fn)
+    print_conflict_notice(conflict_tags, target_fn)
 
     worker = partial(
         convert_to_webp, root_dir=root_path, target_root=out_dir_path,
@@ -158,7 +171,8 @@ def main():
         lossless=args.lossless, keep_exif=args.keep_exif, skip_if_newer=args.skip_if_newer,
         scale=args.scale, in_place=args.in_place,
         min_size_bytes=min_size, max_size_bytes=max_size,
-        skip_if_larger=args.skip_if_larger, target_size_bytes=target_size
+        skip_if_larger=args.skip_if_larger, target_size_bytes=target_size,
+        conflict_tags=conflict_tags,
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="跨格式轉換")
