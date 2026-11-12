@@ -1,5 +1,14 @@
 # Agent Logs
 
+- 2026-11-12 19:19
+  - 重點: 將 `refactor/v8.7-architecture` 合併回主分支 `master`
+  - 影響:
+    - 執行 `git merge --no-ff refactor/v8.7-architecture`：無衝突合併 v8.7.0 架構重構（新增 `ui.py`、`cli.py`、`image_core.py`、`tests/test_architecture_v87.py` 等）。
+    - 合併後於 `master` 重新執行測試：66 passed。
+    - 推送 `master` 至 GitHub。
+  - 結果: v8.7.0 正式進入主分支，本地與遠端同步。
+  - 更新者: Antigravity Agent
+
 - 2026-11-12 19:15
   - 重點: v8.7.0 — 程式碼品質與架構重構 (模組拆分、嚴格原子寫入保護、pyproject 打包精簡、--format avif 支援、測試擴充)
   - 影響:
