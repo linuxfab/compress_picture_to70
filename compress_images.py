@@ -88,6 +88,7 @@ def compress_image(
     target_size_bytes: int | None = None,
     conflict_tags: dict[str, str] | None = None,
     target_format: str = 'auto',
+    png_quantize: bool = False,
 ) -> FileResult:
     """壓縮單張圖片並另存新檔"""
     try:
@@ -149,7 +150,8 @@ def compress_image(
             output_format=output_format,
             force_convert_from=force_from,
             file_stat=f_stat,
-            target_size_bytes=target_size_bytes
+            target_size_bytes=target_size_bytes,
+            png_quantize=png_quantize,
         )
 
         # in_place 且格式轉換時 (e.g. .heic → .jpg 或 --format avif)，刪除原始檔案避免孤兒檔
@@ -181,6 +183,11 @@ def main(argv: list[str] | None = None) -> None:
         default='auto',
         help='輸出圖片格式 (預設: auto，維持原格式並將 HEIC/AVIF 轉為 JPEG)',
     )
+    parser.add_argument(
+        '--png-quantize',
+        action='store_true',
+        help='將輸出 PNG 減色為 256 色調色盤 (保留透明通道，大幅縮減 PNG 體積並支援 --target-size)',
+    )
 
     args = parser.parse_args(argv)
     setup_logger(verbose=args.verbose)
@@ -205,11 +212,12 @@ def main(argv: list[str] | None = None) -> None:
 
     filter_str = build_filter_info(min_size, max_size, args.scale, target_size)
     format_str = f" | [bold cyan]格式[/bold cyan]: {args.format.upper()}" if args.format != 'auto' else ""
+    quant_str = " | [bold green]PNG 減色[/bold green]: 開啟" if args.png_quantize else ""
 
     welcome_str = (
         f"[來源] [bold cyan]目標來源[/bold cyan]: {directory}\n"
         f"[輸出] [bold magenta]輸出位置[/bold magenta]: {out_dir_path if out_dir_path else ('[原地覆蓋]' if args.in_place else '[原地後綴]')}\n"
-        f"[設定] [bold yellow]品質[/bold yellow]: {args.quality}%{format_str}"
+        f"[設定] [bold yellow]品質[/bold yellow]: {args.quality}%{format_str}{quant_str}"
         f"{f' | [bold magenta]目標大小[/bold magenta]: {args.target_size}' if args.target_size else ''} | [bold green]並發[/bold green]: {args.workers}{filter_str}"
     )
     console.print(Panel.fit(welcome_str, title=f"[bold]圖片壓縮工具 v{__version__}[/bold]"))
@@ -235,6 +243,7 @@ def main(argv: list[str] | None = None) -> None:
         dry_run=args.dry_run, skip_if_newer=args.skip_if_newer, scale=args.scale, in_place=args.in_place,
         min_size_bytes=min_size, max_size_bytes=max_size, target_size_bytes=target_size,
         conflict_tags=conflict_tags, target_format=args.format,
+        png_quantize=args.png_quantize,
     )
 
     summary = run_pipeline(files, worker, args.workers, args.dry_run, label="壓縮與格式化")
