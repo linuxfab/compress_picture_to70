@@ -132,7 +132,12 @@ def compress_image(
                 )
 
         if dry_run:
-            return FileResult('dry_run', f"[預覽] 將壓縮: {filepath.name} → {target_path.name} ({format_size(file_size)})")
+            return FileResult(
+                'dry_run',
+                f"[預覽] 將壓縮: {filepath.name} → {target_path.name} ({format_size(file_size)})",
+                original_size=file_size,
+                target_path=str(target_path),
+            )
 
         if target_format.lower() != 'auto':
             output_format = target_format.upper()
@@ -246,7 +251,11 @@ def main(argv: list[str] | None = None) -> None:
         png_quantize=args.png_quantize,
     )
 
-    summary = run_pipeline(files, worker, args.workers, args.dry_run, label="壓縮與格式化")
+    report_path = Path(args.report) if args.report else None
+    summary = run_pipeline(
+        files, worker, args.workers, args.dry_run,
+        label="壓縮與格式化", verbose=args.verbose, report_path=report_path,
+    )
     print_summary(summary, success_label="精簡與輸出成功")
 
 

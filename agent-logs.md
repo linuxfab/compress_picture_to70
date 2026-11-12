@@ -1,5 +1,20 @@
 # Agent Logs
 
+- 2026-11-12 19:33
+  - 重點: v8.9.0 — 使用體驗 (UX) 全面升級 (Ctrl+C 立即停止、-v 除錯輸出、dry-run 獨立統計、拖曳路徑去引號、--report CSV 報表)
+  - 影響:
+    - `ui.py`:
+      - `run_pipeline()` 改為顯式控制 `ProcessPoolExecutor`，捕捉 `KeyboardInterrupt` 時呼叫 `executor.shutdown(wait=False, cancel_futures=True)`。
+      - `FileResult` 新增 `quality_used` 與 `target_path`；`ProcessingSummary` 新增 `dry_run` 計數並在 `print_summary()` 獨立顯示「預覽 (將處理)」。
+      - 支援 `verbose` 除錯輸出跳過與處理明細。
+      - 新增 `export_csv_report()` 匯出 UTF-8 BOM CSV 報表。
+    - `cli.py`: `create_base_parser()` 新增 `--report` 參數；`resolve_directory()` 自動去除前後空白與單雙引號；版本升至 `8.9.0`。
+    - `image_core.py`: 回傳實際使用的 `quality_used` 與 `target_path` 供報表記錄。
+    - `compress_images.py` & `images_to_webp.py`: 傳遞 `verbose` 與 `report_path` 給 `run_pipeline()`。
+    - `tests/test_ux_v89.py`: 新增 7 個 UX 測試案例；更新 `tests/test_architecture_v87.py`。
+  - 結果: 83 個測試全數通過；工作於分支 `feat/v8.9-ux-improvements`。
+  - 更新者: Antigravity Agent
+
 - 2026-11-12 19:30
   - 重點: 將 `fix/v8.8-quality-color` 合併回主分支 `master`
   - 影響:

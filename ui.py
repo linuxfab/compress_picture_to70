@@ -1,8 +1,9 @@
 """
 圖片處理工具 - 終端機 UI 與並行管線模組
-負責 Rich 視覺化輸出、進度條、統計報表與 ProcessPoolExecutor 並行管線。
+負責 Rich 視覺化輸出、進度條、統計報表、CSV 匯出與 ProcessPoolExecutor 並行管線。
 """
 
+import csv
 import logging
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -27,7 +28,7 @@ logger = logging.getLogger("img_tools")
 
 
 def setup_logger(verbose: bool = False) -> None:
-    """初始化底層 Logger 給背景報錯使用，一般輸出改由 Rich 接管"""
+    """初始化底層 Logger；當 verbose=True 時設定為 DEBUG 等級"""
     level = logging.DEBUG if verbose else logging.WARNING
     handler = logging.StreamHandler()
     formatter = logging.Formatter('%(message)s')
@@ -46,6 +47,8 @@ class FileResult:
     original_size: int = 0
     new_size: int = 0
     warn: bool = False  # True 時進度條上方會以黃字顯示 message (例如動畫圖片被跳過)
+    quality_used: int | None = None
+    target_path: str = ""
 
 
 @dataclass
@@ -53,6 +56,7 @@ class ProcessingSummary:
     """批次處理統計摘要"""
     success: int = 0
     skipped: int = 0
+    dry_run: int = 0
     failed: int = 0
     size_skip: int = 0
     total_original: int = 0
@@ -124,19 +128,46 @@ def print_conflict_notice(
         console.print(f"[yellow]  {src_path.name} → {target_fn(src_path, tag).name}[/yellow]")
 
 
+def export_csv_report(report_path: Path, records: list[dict]) -> None:
+    """將逐檔處理結果輸出為 UTF-8 BOM CSV 報表 (方便 Windows Excel 直接開啟)"""
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "filepath",
+        "target_path",
+        "status",
+        "original_size",
+        "new_size",
+        "saved_bytes",
+        "quality_used",
+        "message",
+    ]
+    with open(report_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(records)
+
+
 def run_pipeline(
     files: list[Path],
     worker_fn: Callable[[Path], FileResult],
     workers: int,
     dry_run: bool = False,
     label: str = "處理",
+    verbose: bool | None = None,
+    report_path: Path | None = None,
 ) -> ProcessingSummary:
-    """並行處理檔案管線，整合 Rich 視覺化進度條"""
+    """並行處理檔案管線，整合 Rich 視覺化進度條、Ctrl+C 立即中斷、除錯輸出與 CSV 報表"""
     summary = ProcessingSummary()
     total = len(files)
 
     if total == 0:
+        if report_path is not None:
+            export_csv_report(report_path, [])
+            console.print(f"[cyan]已匯出空報表至: {report_path}[/cyan]")
         return summary
+
+    is_verbose = logger.isEnabledFor(logging.DEBUG) if verbose is None else verbose
+    records: list[dict] = []
 
     if dry_run:
         console.print(f"[bold yellow][DRY-RUN] 找到 {total} 張圖片，預覽模式（不實際寫入）...[/bold yellow]")
@@ -155,41 +186,73 @@ def run_pipeline(
     ) as progress:
         task_id = progress.add_task(f" [cyan]{label}中...", total=total)
 
+        executor = ProcessPoolExecutor(max_workers=workers)
+        interrupted = False
         try:
-            with ProcessPoolExecutor(max_workers=workers) as executor:
-                futures = {executor.submit(worker_fn, f): f for f in files}
+            futures = {executor.submit(worker_fn, f): f for f in files}
 
-                for future in as_completed(futures):
-                    filepath = futures[future]
-                    try:
-                        result = future.result()
-                    except Exception as e:
-                        result = FileResult('failed', f"子程序異常 {filepath.name}: {e}")
+            for future in as_completed(futures):
+                filepath = futures[future]
+                try:
+                    result = future.result()
+                except Exception as e:
+                    result = FileResult('failed', f"子程序異常 {filepath.name}: {e}")
 
-                    if result.status == 'failed':
-                        progress.console.print(f"[bold red]{result.message}[/bold red]")
-                    elif result.status == 'dry_run':
-                        progress.console.print(f"[dim]{result.message}[/dim]")
-                    elif result.warn:
-                        progress.console.print(f"[yellow]{result.message}[/yellow]")
+                if result.status == 'failed':
+                    progress.console.print(f"[bold red]{result.message}[/bold red]")
+                elif result.status == 'dry_run':
+                    progress.console.print(f"[dim]{result.message}[/dim]")
+                elif result.warn:
+                    progress.console.print(f"[yellow]{result.message}[/yellow]")
+                elif is_verbose:
+                    progress.console.print(f"[dim][VERBOSE] {filepath.name}: {result.status} — {result.message}[/dim]")
 
-                    if result.status == 'success':
-                        summary.success += 1
-                        summary.total_original += result.original_size
-                        summary.total_new += result.new_size
-                    elif result.status in ('skipped', 'dry_run'):
-                        summary.skipped += 1
-                    elif result.status == 'size_skip':
-                        summary.size_skip += 1
-                    else:
-                        summary.failed += 1
+                if result.status == 'success':
+                    summary.success += 1
+                    summary.total_original += result.original_size
+                    summary.total_new += result.new_size
+                elif result.status == 'dry_run':
+                    summary.dry_run += 1
+                elif result.status == 'skipped':
+                    summary.skipped += 1
+                elif result.status == 'size_skip':
+                    summary.size_skip += 1
+                else:
+                    summary.failed += 1
 
-                    progress.update(task_id, description=f" [cyan]{label}中: {filepath.name}")
-                    progress.advance(task_id)
+                if report_path is not None:
+                    saved = (
+                        result.original_size - result.new_size
+                        if result.status == 'success'
+                        else 0
+                    )
+                    records.append({
+                        "filepath": str(filepath),
+                        "target_path": result.target_path,
+                        "status": result.status,
+                        "original_size": result.original_size,
+                        "new_size": result.new_size,
+                        "saved_bytes": saved,
+                        "quality_used": result.quality_used if result.quality_used is not None else "",
+                        "message": result.message,
+                    })
+
+                progress.update(task_id, description=f" [cyan]{label}中: {filepath.name}")
+                progress.advance(task_id)
         except KeyboardInterrupt:
-            progress.console.print("\n[bold yellow]警告：使用者中斷 (Ctrl+C)，正在停止...[/bold yellow]")
+            interrupted = True
+            progress.console.print("\n[bold yellow]警告：使用者中斷 (Ctrl+C)，正在取消排隊任務並停止...[/bold yellow]")
+            executor.shutdown(wait=False, cancel_futures=True)
+        finally:
+            if not interrupted:
+                executor.shutdown(wait=True)
 
     summary.elapsed_seconds = time.perf_counter() - t_start
+
+    if report_path is not None:
+        export_csv_report(report_path, records)
+        console.print(f"[bold cyan]已匯出處理報表至: {report_path}[/bold cyan]")
+
     return summary
 
 
@@ -204,6 +267,8 @@ def print_summary(
     status_table.add_column("狀態", style="dim", width=25)
     status_table.add_column("數量", justify="right", style="bold cyan")
 
+    if summary.dry_run > 0:
+        status_table.add_row("[yellow]預覽 (將處理)[/yellow]", f"[yellow]{summary.dry_run}[/yellow]")
     status_table.add_row(success_label, str(summary.success))
     status_table.add_row(skip_label, str(summary.skipped))
     if summary.size_skip > 0:

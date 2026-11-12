@@ -88,7 +88,12 @@ def convert_to_webp(
                 )
 
         if dry_run:
-            return FileResult('dry_run', f"[預覽] 轉 {fmt_upper}: {filepath.name} → {target_path.name} ({format_size(file_size)})")
+            return FileResult(
+                'dry_run',
+                f"[預覽] 轉 {fmt_upper}: {filepath.name} → {target_path.name} ({format_size(file_size)})",
+                original_size=file_size,
+                target_path=str(target_path),
+            )
 
         result = process_image_core(
             filepath=filepath,
@@ -200,7 +205,11 @@ def main(argv: list[str] | None = None) -> None:
         conflict_tags=conflict_tags, target_format=args.format,
     )
 
-    summary = run_pipeline(files, worker, args.workers, args.dry_run, label="跨格式轉換")
+    report_path = Path(args.report) if args.report else None
+    summary = run_pipeline(
+        files, worker, args.workers, args.dry_run,
+        label="跨格式轉換", verbose=args.verbose, report_path=report_path,
+    )
     print_summary(summary, success_label=f"{fmt_upper} 轉換成功", after_label=f"{fmt_upper} 後")
 
 
