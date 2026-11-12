@@ -1,5 +1,14 @@
 # Agent Logs
 
+- 2026-11-12 19:41
+  - 重點: 專案收尾同步 (`uv.lock` 升至 8.9.0、`README.md` 參數補齊、清理 `scratch/` 早期除錯腳本)
+  - 影響:
+    - 執行 `uv lock` 將 `uv.lock` 中的專案版本從 `8.6.0` 同步至 `8.9.0`。
+    - 更新 `README.md`：移除已廢棄的 `compress_images` 腳本別名註解，補齊 `--skip-if-newer` 與 `images-to-webp` 共用參數說明。
+    - 透過 `git rm -r scratch/` 移除 6 個早期除錯腳本。
+  - 結果: 專案檔案、鎖定檔與文件版本完全一致 (8.9.0)，83 個測試全數通過並推送至 GitHub。
+  - 更新者: Antigravity Agent
+
 - 2026-11-12 19:34
   - 重點: 將 `feat/v8.9-ux-improvements` 合併回主分支 `master`
   - 影響:

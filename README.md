@@ -103,7 +103,7 @@ uv sync
 **圖片壓縮 (原地壓縮/另存新檔)**
 ```bash
 uv run compress-img "D:\Photos"
-# 備註：也可使用別名 compress-images 或 compress_images
+# 備註：也可使用別名 compress-images
 ```
 
 **圖片轉 WebP (輸出至 webp_output)**
@@ -138,6 +138,7 @@ uv run compress-img <目錄路徑> [選項]
 | `-n, --dry-run` | 預覽模式：僅列出待處理檔案 | 否 |
 | `-v, --verbose` | 顯示詳細除錯與跳過原因 | 否 |
 | `--report` | 匯出逐檔處理結果至 CSV 報表 (如 `--report out.csv`) | (無) |
+| `--skip-if-newer` | 目標檔案較新時跳過 (增量更新) | 否 |
 | `-d, --max-depth`| 最大遞迴深度 (0=不進入子目錄) | 無限 |
 
 ### images-to-webp (WebP 轉檔)
@@ -156,6 +157,8 @@ uv run images-to-webp <目錄路徑> [選項]
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
 | `-f, --format` | 指定輸出格式 (`webp`, `avif`) | `webp` |
 | `--skip-if-larger` | 若輸出體積大於原圖則捨棄變更 | 否 |
+
+> 註：`images-to-webp` 亦完整支援 `-w`、`-n`、`-v`、`-d`、`-m`、`-M`、`--scale`、`--skip-if-newer`、`-o`、`--report`、`--version` 等共用參數。
 
 ## 輸出檔名衝突規則 (v8.6.0)
 
