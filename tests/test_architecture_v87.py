@@ -64,7 +64,7 @@ class TestModuleSplitAndCompatibility(unittest.TestCase):
         self.assertIs(utils.process_image_core, image_core.process_image_core)
         self.assertIs(utils.FORMAT_MAP, image_core.FORMAT_MAP)
         self.assertIs(utils.EXT_BY_FORMAT, image_core.EXT_BY_FORMAT)
-        self.assertEqual(utils.__version__, "8.7.0")
+        self.assertEqual(utils.__version__, cli.__version__)
 
 
 class TestAtomicWriteProtection(unittest.TestCase):

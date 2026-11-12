@@ -1,5 +1,19 @@
 # Agent Logs
 
+- 2026-11-12 19:23
+  - 重點: v8.8.0 — 修復畫質與色彩正確性問題 (ICC 色彩描述檔保留、特殊色彩模式轉換、目標大小搜尋修復、--png-quantize)
+  - 影響:
+    - `image_core.py`:
+      - 新增 `get_icc_profile()`，在 JPEG/PNG/WebP/AVIF（含動畫 WebP）儲存時保留 `icc_profile`。
+      - 抽出 `_normalize_image_mode()`：支援 `I;16*` 等比例降 8-bit、`PA` 轉 `RGBA`，以及將其餘非 `RGB`/`L` 模式（`YCbCr`、`CMYK`、`1` 等）統一轉為 `RGB`。
+      - 修正 `tune_quality_for_target_size()` 改用 `while low <= high:` 確保精確收斂與 `mid == 40` 保底；品質 40 仍過大時自動漸進縮放 (`×0.85` 最多 3 次) 並回傳黃字提醒；原檔已符合目標大小時跳過多餘重編碼或二分搜尋。
+      - 新增 `_quantize_png()` 支援 `--png-quantize`（256 色減色保留透明度，並支援 `--target-size` 多階減色）。
+    - `compress_images.py`: 新增 `--png-quantize` CLI 參數並傳遞至處理核心。
+    - `cli.py`、`utils.py`、`pyproject.toml`: 版本同步升至 `8.8.0`，匯出 `get_icc_profile`。
+    - `tests/test_quality_color_v88.py`: 新增 10 個測試案例驗證 ICC、16-bit/PA/YCbCr 色彩轉換、目標大小跳過/縮放與 PNG 減色。
+  - 結果: 76 個測試全數通過；工作於分支 `fix/v8.8-quality-color`。
+  - 更新者: Antigravity Agent
+
 - 2026-11-12 19:19
   - 重點: 將 `refactor/v8.7-architecture` 合併回主分支 `master`
   - 影響:

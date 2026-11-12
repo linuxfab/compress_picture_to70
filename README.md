@@ -1,11 +1,24 @@
-# 圖片批量壓縮與轉檔工具 v8.7.0
+# 圖片批量壓縮與轉檔工具 v8.8.0
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
-- 最後更新時間: 2026-11-12 19:15
+- 最後更新時間: 2026-11-12 19:23
 
-遍歷目錄及所有子目錄，支援圖片壓縮與 WebP / AVIF 轉檔。本版本進行了模組架構重構、嚴格原子寫入保護與完整測試覆蓋。
+遍歷目錄及所有子目錄，支援圖片壓縮與 WebP / AVIF 轉檔。本版本著重於色彩正確性、目標大小搜尋精準度與 PNG 減色量化支援。
 
-## 最新改進 (v8.7.0) — 程式碼品質與架構重構
+## 最新改進 (v8.8.0) — 畫質與色彩正確性修復
+- **完整保留 ICC 色彩描述檔 (`get_icc_profile`)**：在 JPEG、PNG、WebP（含動畫 WebP）與 AVIF 輸出時自動保留原圖 `icc_profile`（即使未啟用 `--keep-exif` 亦保留），解決 iPhone Display P3 等廣色域照片轉檔後色彩偏淡的問題。
+- **全面標準化特殊色彩模式 (`_normalize_image_mode`)**：
+  - 16-bit 灰階（`I;16*`）先行等比例縮放至 8-bit `L`，防止直接轉換被截斷為全白 `255`。
+  - `PA` 及含透明通道的 `P` 模式先轉為 `RGBA`，依目標格式保留透明或融合白底。
+  - 其餘非 `RGB` / `L`（如 `YCbCr`、`CMYK`、`1`、`I`、`F`）統一轉換為 `RGB`，解決轉存 JPEG 時報錯的問題。
+- **目標大小 (`--target-size`) 搜尋演算法修復與強化**：
+  - `tune_quality_for_target_size()` 改用 `while low <= high:` 在 `40..95` 精確收斂，修正舊版固定 5 次迭代與 `mid == 40` 無法觸發保底快取的缺陷。
+  - 品質降至 40 仍超過目標大小時，自動漸進縮小尺寸（`×0.85`，最多 3 次）並以黃字提示；若仍超標亦清楚告警。
+  - 原檔已小於等於目標大小時，原地模式直接跳過避免多餘重編碼損耗畫質；另存新檔時免跑二分搜尋，直接單次編碼。
+- **新增 `--png-quantize` 選項**：`compress_images.py` 支援使用 `FASTOCTREE` 將 PNG 減色為 256 色調色盤（保留 Alpha 透明通道），並可搭配 `--target-size` 動態嘗試 `256 -> 128 -> 64 -> 32` 色逼近目標體積。
+- **測試**：新增 `tests/test_quality_color_v88.py`（10 個案例），總計 **76 個測試全數通過**。
+
+## 歷史改進 (v8.7.0) — 程式碼品質與架構重構
 - **單一職責模組拆分**：將原本超過 800 行的 `utils.py` 拆分為三個獨立模組：
   - `ui.py`：Rich 終端機輸出、進度條、`run_pipeline()` 並行管線與統計報表。
   - `cli.py`：CLI 共用參數解析、容量單位轉換、目錄遍歷與檔名衝突標籤分配。
@@ -111,6 +124,7 @@ uv run compress-img <目錄路徑> [選項]
 | `-o, --overwrite` | 覆蓋已存在的壓縮檔 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
 | `-f, --format` | 指定輸出格式 (`auto`, `jpeg`, `png`, `webp`, `avif`) | `auto` |
+| `--png-quantize` | 將輸出 PNG 減色為 256 色調色盤 (保留透明通道，支援 `--target-size`) | 否 |
 | `-w, --workers` | Process 數量 (並行) | 自動偵測 CPU 核心數 (上限 8) |
 | `--version` | 顯示版本號 | — |
 | `-n, --dry-run` | 預覽模式：僅列出待處理檔案 | 否 |
@@ -148,10 +162,10 @@ uv run images-to-webp <目錄路徑> [選項]
 - `ui.py`: 終端機 UI 與 `ProcessPoolExecutor` 並行管線
 - `cli.py`: CLI 共用參數解析、目錄掃描與衝突偵測
 - `image_core.py`: 影像編碼核心與嚴格原子寫入
-- `utils.py`: 共用模組相容匯出層 (v8.7.0)
+- `utils.py`: 共用模組相容匯出層 (v8.8.0)
 - `compress_images.py`: 圖片壓縮 CLI
 - `images_to_webp.py`: WebP / AVIF 轉檔 CLI
-- `tests/`: 單元測試 (66 個測試案例；涵蓋工具函式、影像邏輯、資料安全與架構測試)
+- `tests/`: 單元測試 (76 個測試案例；涵蓋工具函式、影像邏輯、資料安全、架構與畫質測試)
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
 
 ## 架構設計
@@ -186,4 +200,4 @@ MIT
 
 ## Authors
 - [linuxfab](https://github.com/linuxfab)
-- Last Update: 2026-11-12 19:15
+- Last Update: 2026-11-12 19:23

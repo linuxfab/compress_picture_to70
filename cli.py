@@ -10,7 +10,7 @@ from typing import Callable, Iterable
 
 from ui import console
 
-__version__ = "8.7.0"
+__version__ = "8.8.0"
 
 
 def parse_size_to_bytes(size_str: str | None) -> int | None:
