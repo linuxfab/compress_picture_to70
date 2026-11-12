@@ -1,11 +1,22 @@
-# 圖片批量壓縮與轉檔工具 v8.6.0
+# 圖片批量壓縮與轉檔工具 v8.7.0
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
-- 最後更新時間: 2026-11-12 19:08
+- 最後更新時間: 2026-11-12 19:15
 
-遍歷目錄及所有子目錄，支援圖片壓縮與 WebP 轉檔。本版本進行了進階的影像效能優化與 TUI 終端體驗提升。
+遍歷目錄及所有子目錄，支援圖片壓縮與 WebP / AVIF 轉檔。本版本進行了模組架構重構、嚴格原子寫入保護與完整測試覆蓋。
 
-## 最新改進 (v8.6.0) — 資料安全修復
+## 最新改進 (v8.7.0) — 程式碼品質與架構重構
+- **單一職責模組拆分**：將原本超過 800 行的 `utils.py` 拆分為三個獨立模組：
+  - `ui.py`：Rich 終端機輸出、進度條、`run_pipeline()` 並行管線與統計報表。
+  - `cli.py`：CLI 共用參數解析、容量單位轉換、目錄遍歷與檔名衝突標籤分配。
+  - `image_core.py`：圖片編碼核心、目標體積二分搜尋與嚴格原子寫入。
+  - `utils.py` 保留作為向後相容的統一匯出層 (Facade)。
+- **嚴格原子寫入保護 (`_atomic_write`)**：將重複的函式內 `import stat` 移至頂層並抽出 `_atomic_write()`；當 `os.replace()` 失敗時僅清理暫存檔並向上拋出錯誤，移除會破壞原子性的直寫 fallback，確保原檔在任何異常下皆不被損毀。
+- **新增 `--format` 參數 (啟用 AVIF 輸出)**：`compress_images.py` 新增 `-f / --format {auto,jpeg,png,webp,avif}`，`images_to_webp.py` 新增 `-f / --format {webp,avif}`，使內建的 `AVIF` 編碼能力正式開放給 CLI 使用。
+- **`pyproject.toml` 打包與腳本清理**：改用 `only-include` 精準打包核心模組（排除 `tests/` 與 `scratch/`），並移除重複的 `compress_images` script 定義。
+- **測試覆蓋率擴充**：新增 `tests/test_architecture_v87.py`（13 個案例），涵蓋 `run_pipeline()`、`main()` CLI 參數解析、嚴格原子寫入保護、`--format avif` 轉檔與 `pyproject.toml` 設定驗證，總計 **66 個測試全數通過**。
+
+## 歷史改進 (v8.6.0) — 資料安全修復
 - **同名不同副檔名衝突保護**：`a.jpg` 與 `a.png` 轉 WebP 時原本都會輸出成 `a.webp` 互相覆蓋（原地模式下兩個原檔還會被刪除）。現在由主程序在送進多程序管線前呼叫 `assign_conflict_tags()` 一次性偵測衝突（不分大小寫），衝突檔案改為 `a_jpg.webp`、`a_png.webp`，並在開始前列出改名清單；同時徹底消除多程序同時寫入同一檔案的競態。
 - **原地模式不再覆蓋其他既有檔案**：`--in-place` 只允許「覆寫自己」。若 `IMG.heic → IMG.jpg` 或 `a.jpg → a.webp` 的目標已是另一個既有檔案，未加 `-o` 時會跳過、保留原檔並以黃字提醒。壓縮工具中同目錄的 `IMG.heic` + `IMG.jpg` 則由衝突偵測自動改為 `IMG_heic.jpg`。
 - **動畫圖片保護**：偵測多影格來源（動畫 WebP / APNG / 動畫 AVIF）。輸出為 WebP 時逐格重新編碼並保留每格 duration 與 loop（支援 `--scale`）；輸出為 JPEG 等不支援動畫的格式時跳過並保留原檔，不再悄悄只剩第一格。動畫不套用 `--target-size`。
@@ -99,6 +110,7 @@ uv run compress-img <目錄路徑> [選項]
 | `-T, --target-size`| 目標檔案大小限制 (如 500KB, 1MB)，自動逼近最優 quality | (無) |
 | `-o, --overwrite` | 覆蓋已存在的壓縮檔 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
+| `-f, --format` | 指定輸出格式 (`auto`, `jpeg`, `png`, `webp`, `avif`) | `auto` |
 | `-w, --workers` | Process 數量 (並行) | 自動偵測 CPU 核心數 (上限 8) |
 | `--version` | 顯示版本號 | — |
 | `-n, --dry-run` | 預覽模式：僅列出待處理檔案 | 否 |
@@ -118,7 +130,8 @@ uv run images-to-webp <目錄路徑> [選項]
 | `-l, --lossless` | 使用無損壓縮 | 否 |
 | `-T, --target-size`| 目標檔案大小限制 (如 500KB, 1MB)，自動逼近最優 quality | (無) |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
-| `--skip-if-larger` | 若 WebP 體積大於原圖則捨棄變更 | 否 |
+| `-f, --format` | 指定輸出格式 (`webp`, `avif`) | `webp` |
+| `--skip-if-larger` | 若輸出體積大於原圖則捨棄變更 | 否 |
 
 ## 輸出檔名衝突規則 (v8.6.0)
 
@@ -132,29 +145,40 @@ uv run images-to-webp <目錄路徑> [選項]
 - 比對一律不分大小寫 (以 Windows/macOS 檔案系統為準)。
 
 ## 專案結構
-- `utils.py`: 共用核心模組 (v8.6.0)
+- `ui.py`: 終端機 UI 與 `ProcessPoolExecutor` 並行管線
+- `cli.py`: CLI 共用參數解析、目錄掃描與衝突偵測
+- `image_core.py`: 影像編碼核心與嚴格原子寫入
+- `utils.py`: 共用模組相容匯出層 (v8.7.0)
 - `compress_images.py`: 圖片壓縮 CLI
-- `images_to_webp.py`: WebP 轉檔 CLI
-- `tests/`: 單元測試 (53 個測試案例；`test_safety_v86.py` 為資料安全回歸測試)
+- `images_to_webp.py`: WebP / AVIF 轉檔 CLI
+- `tests/`: 單元測試 (66 個測試案例；涵蓋工具函式、影像邏輯、資料安全與架構測試)
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
 
 ## 架構設計
 
 ```
-utils.py
-├── FORMAT_MAP                       — 集中管理的格式映射表
+image_core.py
+├── FORMAT_MAP / EXT_BY_FORMAT       — 集中管理的雙向格式映射表
 ├── COMPRESSED_SUFFIX_PATTERN        — 已壓縮檔案後綴匹配 (含百分比與容量後綴)
 ├── tune_quality_for_target_size()   — 目標體積記憶體二分搜尋逼近與結果快取
-├── process_image_core()             — 統一的圖片處理核心 (動畫判斷/分派/大小檢查/原子寫入)
-│   ├── _encode_still_image()        — 靜態圖：EXIF 轉正/縮放/色彩轉換/目標大小逼近/編碼
-│   └── _encode_animated_webp()      — 動畫：逐格轉 RGBA 並保留 duration/loop
+├── _atomic_write()                  — 嚴格原子寫入 (失敗清理暫存，絕不直寫破壞原檔)
+└── process_image_core()             — 統一的圖片處理核心 (動畫判斷/分派/大小檢查/寫入)
+    ├── _encode_still_image()        — 靜態圖：EXIF 轉正/縮放/色彩轉換/目標大小逼近/編碼
+    └── _encode_animated_webp()      — 動畫：逐格轉 RGBA 並保留 duration/loop
+
+cli.py
 ├── collect_files()                  — os.walk 掃描 + exclude_fn 剪枝 + sorted() 排序
 ├── make_output_dir_excluder()       — 輸出目錄位於來源內時產生剪枝函式 (避免 out/out/...)
 ├── assign_conflict_tags()           — 主程序一次性偵測輸出檔名衝突並分配唯一標籤
+└── create_base_parser() / validate_* — 共用 CLI 參數與檢核
+
+ui.py
 ├── run_pipeline()                   — 並行處理管線 (ProcessPoolExecutor)
-├── validate_scale()                 — 共用 scale 參數驗證
 ├── build_filter_info()              — 共用過濾條件顯示字串組裝
-└── print_summary()                  — 含平均節省空間的報表
+├── print_conflict_notice()          — 衝突改名清單提示
+└── print_summary()                  — 含平均節省空間的 Rich 報表
+
+utils.py                             — Re-export Facade (維持向後相容)
 ```
 
 ## License
@@ -162,4 +186,4 @@ MIT
 
 ## Authors
 - [linuxfab](https://github.com/linuxfab)
-- Last Update: 2026-11-12 19:08
+- Last Update: 2026-11-12 19:15

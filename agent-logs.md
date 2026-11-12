@@ -1,5 +1,16 @@
 # Agent Logs
 
+- 2026-11-12 19:15
+  - 重點: v8.7.0 — 程式碼品質與架構重構 (模組拆分、嚴格原子寫入保護、pyproject 打包精簡、--format avif 支援、測試擴充)
+  - 影響:
+    - 拆分 `utils.py` 為 `ui.py`、`cli.py`、`image_core.py`，並將 `utils.py` 轉為向後相容匯出層 (Facade)。
+    - `image_core.py`: 頂層 `import stat`、新增 `EXT_BY_FORMAT`、抽出嚴格原子寫入 `_atomic_write()` (失敗時清理暫存檔並拋出例外，移除破壞原子性的直寫 fallback)。
+    - `compress_images.py` & `images_to_webp.py`: 新增 `-f / --format` 參數 (正式支援 `avif` 輸出)，並使 `main(argv=None)` 可直接進行單元測試。
+    - `pyproject.toml`: 版本升至 `8.7.0`；移除重複的 `compress_images` script；`[tool.hatch.build.targets.wheel]` 改用 `only-include` 排除 `tests/` 與 `scratch/`。
+    - `tests/test_architecture_v87.py`: 新增 13 個單元測試覆蓋模組拆分、嚴格原子寫入、`run_pipeline()`、`main()` CLI 解析、`--format avif` 與 `pyproject.toml` 檢核。
+  - 結果: 66 個測試全數通過；工作於分支 `refactor/v8.7-architecture`。
+  - 更新者: Antigravity Agent
+
 - 2026-11-12 19:11
   - 重點: 將 `fix/v8.6-safety` 合併回主分支 `master`
   - 影響:
