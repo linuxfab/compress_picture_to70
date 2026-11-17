@@ -332,7 +332,7 @@ def _atomic_write(target_path: Path, data: bytes) -> None:
 
         if target_path.exists():
             try:
-                os.chmod(target_path, stat.S_IWRITE)
+                os.chmod(target_path, target_path.stat().st_mode | stat.S_IWRITE)
             except OSError:
                 pass
 
