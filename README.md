@@ -1,11 +1,17 @@
-# 圖片批量壓縮與轉檔工具 v8.9.0
+# 圖片批量壓縮與轉檔工具 v8.10.0
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
-- 最後更新時間: 2026-11-12 19:33
+- 最後更新時間: 2026-11-17
 
 遍歷目錄及所有子目錄，支援圖片壓縮與 WebP / AVIF 轉檔。本版本專注於終端操作體驗、互動模式容錯與處理報表匯出。
 
-## 最新改進 (v8.9.0) — 使用體驗 (UX) 全面升級
+## 最新改進 (v8.10.0) — 依最長邊縮圖與隱私保護
+- **新增 `--max-dim <像素>`**：限制輸出圖片的最長邊 (例如 `--max-dim 1920`)，只縮小不放大，橫圖、直圖皆適用；可與 `--scale` 併用 (先套用比例，再限制最長邊)。靜態圖與動畫 WebP 皆支援，兩個工具共用。
+- **新增 `--strip-gps`**：移除 EXIF 中的 GPS 位置資訊，保留拍攝時間、相機型號等其餘欄位；會自動啟用 `--keep-exif`。若 EXIF 無法解析，則整份不保留以免外洩位置。
+- **修正 EXIF 方向重複旋轉**：搭配 `--keep-exif` 時，像素已依 EXIF 轉正，但舊版仍保留原本的 Orientation 標籤，導致看圖軟體再轉一次 (直式照片變橫的)。現在保留的 EXIF 會將 Orientation 重設為 1。
+- **測試**：新增 `tests/test_resize_privacy_v810.py`（18 個案例），總計 **99 個測試全數通過**。
+
+## 歷史改進 (v8.9.0) — 使用體驗 (UX) 全面升級
 - **Ctrl+C 立即停止**：`run_pipeline()` 改為顯式管理 `ProcessPoolExecutor` 生命週期，捕捉到 `KeyboardInterrupt` 時呼叫 `executor.shutdown(wait=False, cancel_futures=True)` 立即取消所有排隊中的任務，不再卡住等待。
 - **`-v / --verbose` 除錯輸出啟用**：啟用 `-v` 時會在進度條上方即時列出每個被跳過或處理的檔案詳細狀態與原因，方便排查大小過濾、已存在或 BMP 跳過問題。
 - **預覽模式 (`--dry-run`) 獨立統計**：`ProcessingSummary` 新增 `dry_run` 計數，結算報表顯示獨立的「預覽 (將處理)」列，不再誤算進「跳過」。
@@ -125,12 +131,14 @@ uv run compress-img <目錄路徑> [選項]
 | `-O, --out-dir` | 自訂輸出目錄 (留空則在原地建立) | (無) |
 | `-q, --quality` | 壓縮品質 1-100 | 70 |
 | `--scale` | 縮放比例 (0.1-1.0)，如 0.5 為長寬減半 | 1.0 |
+| `--max-dim` | 限制最長邊像素 (只縮小不放大)，如 `1920` | (無) |
 | `--in-place` | 原地覆蓋：直接取代原始檔案 (不加後綴)；HEIC/AVIF 轉出的 .jpg 若撞到既有檔案需加 `-o` | 否 |
 | `-m, --min-size` | 最小檔案過濾 (如 500KB, 1MB) | (無) |
 | `-M, --max-size` | 最大檔案過濾 | (無) |
 | `-T, --target-size`| 目標檔案大小限制 (如 500KB, 1MB)，自動逼近最優 quality | (無) |
 | `-o, --overwrite` | 覆蓋已存在的壓縮檔 | 否 |
 | `-e, --keep-exif` | 保留 EXIF 資訊 | 否 |
+| `--strip-gps` | 保留 EXIF 但移除 GPS 位置 (自動啟用 `--keep-exif`) | 否 |
 | `-f, --format` | 指定輸出格式 (`auto`, `jpeg`, `png`, `webp`, `avif`) | `auto` |
 | `--png-quantize` | 將輸出 PNG 減色為 256 色調色盤 (保留透明通道，支援 `--target-size`) | 否 |
 | `-w, --workers` | Process 數量 (並行) | 自動偵測 CPU 核心數 (上限 8) |
@@ -158,7 +166,7 @@ uv run images-to-webp <目錄路徑> [選項]
 | `-f, --format` | 指定輸出格式 (`webp`, `avif`) | `webp` |
 | `--skip-if-larger` | 若輸出體積大於原圖則捨棄變更 | 否 |
 
-> 註：`images-to-webp` 亦完整支援 `-w`、`-n`、`-v`、`-d`、`-m`、`-M`、`--scale`、`--skip-if-newer`、`-o`、`--report`、`--version` 等共用參數。
+> 註：`images-to-webp` 亦完整支援 `-w`、`-n`、`-v`、`-d`、`-m`、`-M`、`--scale`、`--max-dim`、`--strip-gps`、`--skip-if-newer`、`-o`、`--report`、`--version` 等共用參數。
 
 ## 輸出檔名衝突規則 (v8.6.0)
 
@@ -175,10 +183,10 @@ uv run images-to-webp <目錄路徑> [選項]
 - `ui.py`: 終端機 UI 與 `ProcessPoolExecutor` 並行管線
 - `cli.py`: CLI 共用參數解析、目錄掃描與衝突偵測
 - `image_core.py`: 影像編碼核心與嚴格原子寫入
-- `utils.py`: 共用模組相容匯出層 (v8.9.0)
+- `utils.py`: 共用模組相容匯出層 (v8.10.0)
 - `compress_images.py`: 圖片壓縮 CLI
 - `images_to_webp.py`: WebP / AVIF 轉檔 CLI
-- `tests/`: 單元測試 (81 個測試案例；涵蓋工具函式、影像邏輯、資料安全、架構、畫質與 UX 測試)
+- `tests/`: 單元測試 (99 個測試案例；涵蓋工具函式、影像邏輯、資料安全、架構、畫質與 UX 測試)
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
 
 ## 架構設計

@@ -1,5 +1,11 @@
 # Agent Logs
 
+- 2026-11-17
+  - 重點: v8.10.0 新增 `--max-dim`、`--strip-gps`，修正保留 EXIF 時方向被重複旋轉
+  - 影響: `image_core.py` 新增 `compute_resize()`、`prepare_exif_bytes()`；`cli.py` 新增共用參數與 `validate_max_dim()`；兩個 CLI 傳遞新參數；新增 `tests/test_resize_privacy_v810.py`。
+  - 結果: 99 個測試全數通過。
+  - 更新者: Claude
+
 - 2026-11-12 19:41
   - 重點: 專案收尾同步 (`uv.lock` 升至 8.9.0、`README.md` 參數補齊、清理 `scratch/` 早期除錯腳本)
   - 影響:

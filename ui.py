@@ -94,6 +94,8 @@ def build_filter_info(
     max_size: int | None,
     scale: float,
     target_size: int | None = None,
+    max_dim: int | None = None,
+    strip_gps: bool = False,
 ) -> str:
     """組裝過濾與目標條件的顯示字串，供 Welcome Panel 使用"""
     parts: list[str] = []
@@ -103,6 +105,10 @@ def build_filter_info(
         parts.append(f"<= {format_size(max_size)}")
     if scale < 1.0:
         parts.append(f"縮放 {scale:.0%}")
+    if max_dim:
+        parts.append(f"最長邊 {max_dim}px")
+    if strip_gps:
+        parts.append("移除 GPS")
     if target_size:
         parts.append(f"目標大小 {format_size(target_size)}")
     return f" | [bold red]過濾/目標[/bold red]: {', '.join(parts)}" if parts else ""

@@ -17,6 +17,7 @@ from cli import (
     parse_size_to_bytes,
     resolve_directory,
     validate_quality,
+    validate_max_dim,
     validate_scale,
 )
 from image_core import EXT_BY_FORMAT, SUPPORTED_FORMATS, process_image_core
@@ -59,6 +60,8 @@ def convert_to_webp(
     skip_if_larger: bool = False, target_size_bytes: int | None = None,
     conflict_tags: dict[str, str] | None = None,
     target_format: str = 'webp',
+    max_dim: int | None = None,
+    strip_gps: bool = False,
 ) -> FileResult:
     """將單張圖片轉換為 WebP / AVIF 並另存新檔"""
     try:
@@ -105,7 +108,9 @@ def convert_to_webp(
             lossless=lossless,
             skip_if_larger=skip_if_larger,
             file_stat=f_stat,
-            target_size_bytes=target_size_bytes
+            target_size_bytes=target_size_bytes,
+            max_dim=max_dim,
+            strip_gps=strip_gps,
         )
 
         if result.status == 'success' and in_place and not dry_run:
@@ -142,8 +147,10 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     setup_logger(verbose=args.verbose)
 
-    if not validate_scale(args.scale):
+    if not validate_scale(args.scale) or not validate_max_dim(args.max_dim):
         return
+    # --strip-gps 的意義是「保留 EXIF 但去掉位置」，因此自動啟用 --keep-exif
+    keep_exif = args.keep_exif or args.strip_gps
 
     directory = resolve_directory(args)
     if not directory or not (args.lossless or validate_quality(args.quality)):
@@ -170,7 +177,10 @@ def main(argv: list[str] | None = None) -> None:
         default_dir = "webp_output" if args.format == 'webp' else f"{args.format}_output"
         out_dir_path = Path(args.out_dir) if args.out_dir else root_path / default_dir
 
-    filter_str = build_filter_info(min_size, max_size, args.scale, target_size)
+    filter_str = build_filter_info(
+        min_size, max_size, args.scale, target_size,
+        max_dim=args.max_dim, strip_gps=args.strip_gps,
+    )
 
     target_size_desc = f" | [bold magenta]目標大小[/bold magenta]: {args.target_size}" if args.target_size else ""
     welcome_str = (
@@ -198,11 +208,12 @@ def main(argv: list[str] | None = None) -> None:
     worker = partial(
         convert_to_webp, root_dir=root_path, target_root=out_dir_path,
         quality=args.quality, overwrite=args.overwrite, dry_run=args.dry_run,
-        lossless=args.lossless, keep_exif=args.keep_exif, skip_if_newer=args.skip_if_newer,
+        lossless=args.lossless, keep_exif=keep_exif, skip_if_newer=args.skip_if_newer,
         scale=args.scale, in_place=args.in_place,
         min_size_bytes=min_size, max_size_bytes=max_size,
         skip_if_larger=args.skip_if_larger, target_size_bytes=target_size,
         conflict_tags=conflict_tags, target_format=args.format,
+        max_dim=args.max_dim, strip_gps=args.strip_gps,
     )
 
     report_path = Path(args.report) if args.report else None
