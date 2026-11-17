@@ -1,7 +1,8 @@
 # 圖片批量壓縮與轉檔工具 v8.9.0
 
 - GitHub: [https://github.com/linuxfab/compress_picture_to70](https://github.com/linuxfab/compress_picture_to70)
-- 最後更新時間: 2026-11-17 21:01
+- 最後更新時間: 2026-11-17 21:06
+- 完整命令手冊: 請參閱 [操作手冊.md](./操作手冊.md)
 
 遍歷目錄及所有子目錄，支援圖片壓縮與 WebP / AVIF 轉檔。本版本專注於終端操作體驗、互動模式容錯與處理報表匯出。
 
@@ -180,6 +181,7 @@ uv run images-to-webp <目錄路徑> [選項]
 - `images_to_webp.py`: WebP / AVIF 轉檔 CLI
 - `tests/`: 單元測試 (81 個測試案例；涵蓋工具函式、影像邏輯、資料安全、架構、畫質與 UX 測試)
 - `.github/workflows/tests.yml`: GitHub Actions CI 工作流程（透過 `uv` 執行 `pytest`）
+- `操作手冊.md`: 完整命令與參數操作指南
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
 
 ## 架構設計
@@ -214,4 +216,4 @@ MIT
 
 ## Authors
 - [linuxfab](https://github.com/linuxfab)
-- Last Update: 2026-11-17 21:01
+- Last Update: 2026-11-17 21:06

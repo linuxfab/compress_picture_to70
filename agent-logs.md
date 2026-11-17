@@ -1,5 +1,13 @@
 # Agent Logs
 
+- 2026-11-17 21:06
+  - 重點: 新增完整 CLI 命令 `操作手冊.md`
+  - 影響:
+    - 新增 `操作手冊.md`: 依據 `cli.py`、`compress_images.py`、`images_to_webp.py` 與 `image_core.py` 實作，整理 `compress-img` 與 `images-to-webp` 所有參數、預設值、支援格式、進階機制（目標大小逼近、衝突標籤、原子寫入、CSV 報表欄位）及 12 組實戰指令範例。
+    - 更新 `README.md`: 加入 `操作手冊.md` 導覽連結，並更新最後更新時間為 `2026-11-17 21:06`。
+  - 結果: 提供完整且對齊 `v8.9.0` 程式行為的繁體中文操作指南，方便查閱與實務操作。
+  - 更新者: Antigravity Agent
+
 - 2026-11-17 21:01
   - 重點: 更新專案 Markdown 文件 (`README.md` 與 `agent-logs.md`)，同步近期 CI 設定、原子寫入權限修復與測試計數修正紀錄
   - 影響:
