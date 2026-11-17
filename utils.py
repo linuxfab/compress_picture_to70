@@ -17,6 +17,7 @@ from cli import (
     make_output_dir_excluder,
     parse_size_to_bytes,
     resolve_directory,
+    validate_max_dim,
     validate_quality,
     validate_scale,
 )
@@ -75,6 +76,7 @@ __all__ = [
     "run_pipeline",
     "setup_logger",
     "tune_quality_for_target_size",
+    "validate_max_dim",
     "validate_quality",
     "validate_scale",
 ]

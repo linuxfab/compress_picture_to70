@@ -17,6 +17,7 @@ from cli import (
     parse_size_to_bytes,
     resolve_directory,
     validate_quality,
+    validate_max_dim,
     validate_scale,
 )
 from image_core import (
@@ -89,6 +90,8 @@ def compress_image(
     conflict_tags: dict[str, str] | None = None,
     target_format: str = 'auto',
     png_quantize: bool = False,
+    max_dim: int | None = None,
+    strip_gps: bool = False,
 ) -> FileResult:
     """壓縮單張圖片並另存新檔"""
     try:
@@ -157,6 +160,8 @@ def compress_image(
             file_stat=f_stat,
             target_size_bytes=target_size_bytes,
             png_quantize=png_quantize,
+            max_dim=max_dim,
+            strip_gps=strip_gps,
         )
 
         # in_place 且格式轉換時 (e.g. .heic → .jpg 或 --format avif)，刪除原始檔案避免孤兒檔
@@ -197,8 +202,10 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     setup_logger(verbose=args.verbose)
 
-    if not validate_scale(args.scale):
+    if not validate_scale(args.scale) or not validate_max_dim(args.max_dim):
         return
+    # --strip-gps 的意義是「保留 EXIF 但去掉位置」，因此自動啟用 --keep-exif
+    keep_exif = args.keep_exif or args.strip_gps
 
     directory = resolve_directory(args)
     if not directory or not validate_quality(args.quality):
@@ -215,7 +222,10 @@ def main(argv: list[str] | None = None) -> None:
     root_path = Path(directory)
     out_dir_path = Path(args.out_dir) if args.out_dir and not args.in_place else None
 
-    filter_str = build_filter_info(min_size, max_size, args.scale, target_size)
+    filter_str = build_filter_info(
+        min_size, max_size, args.scale, target_size,
+        max_dim=args.max_dim, strip_gps=args.strip_gps,
+    )
     format_str = f" | [bold cyan]格式[/bold cyan]: {args.format.upper()}" if args.format != 'auto' else ""
     quant_str = " | [bold green]PNG 減色[/bold green]: 開啟" if args.png_quantize else ""
 
@@ -244,10 +254,11 @@ def main(argv: list[str] | None = None) -> None:
 
     worker = partial(
         compress_image, root_dir=root_path, out_dir=out_dir_path,
-        quality=args.quality, overwrite=args.overwrite, keep_exif=args.keep_exif,
+        quality=args.quality, overwrite=args.overwrite, keep_exif=keep_exif,
         dry_run=args.dry_run, skip_if_newer=args.skip_if_newer, scale=args.scale, in_place=args.in_place,
         min_size_bytes=min_size, max_size_bytes=max_size, target_size_bytes=target_size,
         conflict_tags=conflict_tags, target_format=args.format,
+        max_dim=args.max_dim, strip_gps=args.strip_gps,
         png_quantize=args.png_quantize,
     )
 

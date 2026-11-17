@@ -10,7 +10,7 @@ from typing import Callable, Iterable
 
 from ui import console
 
-__version__ = "8.9.0"
+__version__ = "8.10.0"
 
 
 def parse_size_to_bytes(size_str: str | None) -> int | None:
@@ -189,6 +189,10 @@ def create_base_parser(description: str, epilog: str) -> argparse.ArgumentParser
                         help='如果目標檔案存在且比來源檔案新則跳過 (適用於增量備份)')
     parser.add_argument('--scale', type=float, default=1.0,
                         help='縮放比例 (0.1 - 1.0)，例如 0.5 表示長寬減半 (預設: 1.0)')
+    parser.add_argument('--max-dim', type=int, default=None, metavar='PX',
+                        help='限制最長邊像素 (只縮小不放大)，例如 1920；可與 --scale 併用')
+    parser.add_argument('--strip-gps', action='store_true',
+                        help='移除 GPS 位置資訊，保留其餘 EXIF (會自動啟用 --keep-exif)')
     parser.add_argument('--in-place', action='store_true',
                         help='原地覆蓋：直接取代原始檔案 (不加後綴，且會自動刪除/覆蓋原檔，請小心使用)')
     parser.add_argument('--report', type=str, default=None,
@@ -224,6 +228,14 @@ def validate_quality(quality: int) -> bool:
     """驗證 quality 參數範圍"""
     if not 1 <= quality <= 100:
         console.print("[bold red]錯誤：壓縮品質 quality 必須在 1-100 之間。[/bold red]")
+        return False
+    return True
+
+
+def validate_max_dim(max_dim: int | None) -> bool:
+    """驗證 --max-dim 參數 (須為正整數)，回傳 False 表示無效"""
+    if max_dim is not None and max_dim < 1:
+        console.print("[bold red]錯誤：--max-dim 必須是大於 0 的整數 (像素)[/bold red]")
         return False
     return True
 

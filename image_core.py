@@ -96,6 +96,57 @@ def get_exif_data(img: Image.Image) -> bytes | None:
         return None
 
 
+# EXIF 標籤：Orientation 與 GPS IFD 指標
+EXIF_ORIENTATION_TAG = 0x0112
+EXIF_GPS_IFD_TAG = 0x8825
+
+
+def prepare_exif_bytes(
+    exif_data: bytes | None,
+    strip_gps: bool = False,
+    reset_orientation: bool = False,
+) -> bytes | None:
+    """
+    依需求清理 EXIF 後重新序列化：
+    - strip_gps：移除整個 GPS IFD (經緯度、高度、時間戳等)，保留拍攝時間與相機資訊。
+    - reset_orientation：像素已依 EXIF 轉正時，將 Orientation 設為 1，避免看圖軟體再轉一次。
+    無需修改時原樣回傳；解析失敗時，若要求移除 GPS 則回傳 None (寧可整份不保留也不外洩位置)。
+    """
+    if not exif_data or not (strip_gps or reset_orientation):
+        return exif_data
+    try:
+        exif = Image.Exif()
+        exif.load(exif_data)
+        changed = False
+        if strip_gps and EXIF_GPS_IFD_TAG in exif:
+            del exif[EXIF_GPS_IFD_TAG]
+            changed = True
+        if reset_orientation and exif.get(EXIF_ORIENTATION_TAG, 1) != 1:
+            exif[EXIF_ORIENTATION_TAG] = 1
+            changed = True
+        return exif.tobytes() if changed else exif_data
+    except Exception:
+        return None if strip_gps else exif_data
+
+
+def compute_resize(width: int, height: int, scale: float = 1.0, max_dim: int | None = None) -> tuple[int, int] | None:
+    """
+    計算縮放後的尺寸：先套用 --scale，再以 --max-dim 限制最長邊 (只縮小、不放大)。
+    回傳 None 表示不需縮放。
+    """
+    new_w, new_h = width, height
+    if 0.1 <= scale < 1.0:
+        new_w = max(1, int(width * scale))
+        new_h = max(1, int(height * scale))
+    if max_dim and max(new_w, new_h) > max_dim:
+        ratio = max_dim / max(new_w, new_h)
+        new_w = max(1, round(new_w * ratio))
+        new_h = max(1, round(new_h * ratio))
+    if (new_w, new_h) == (width, height):
+        return None
+    return new_w, new_h
+
+
 def get_icc_profile(img: Image.Image) -> bytes | None:
     """取得圖片的 ICC 色彩描述檔 (例如 Display P3 / AdobeRGB)，避免轉檔後色彩偏淡"""
     try:
@@ -168,6 +219,7 @@ def _encode_animated_webp(
     lossless: bool,
     exif_data: bytes | None,
     icc_profile: bytes | None = None,
+    max_dim: int | None = None,
 ) -> bytes:
     """
     逐格讀取動畫並重新編碼為動畫 WebP，保留每一格的顯示時間 (duration)、循環次數 (loop) 與 ICC 色彩描述檔。
@@ -178,11 +230,9 @@ def _encode_animated_webp(
 
     for frame in ImageSequence.Iterator(src):
         f = frame.convert('RGBA')
-        if 0.1 <= scale < 1.0:
-            f = f.resize(
-                (max(1, int(f.width * scale)), max(1, int(f.height * scale))),
-                Image.Resampling.LANCZOS,
-            )
+        new_size = compute_resize(f.width, f.height, scale, max_dim)
+        if new_size:
+            f = f.resize(new_size, Image.Resampling.LANCZOS)
         frames.append(f)
         durations.append(int(frame.info.get('duration') or default_duration))
 
@@ -221,21 +271,25 @@ def _encode_still_image(
     original_size: int,
     target_size_bytes: int | None,
     png_quantize: bool = False,
+    max_dim: int | None = None,
+    strip_gps: bool = False,
 ) -> tuple[bytes, str | None, int | None]:
     """
     單張靜態圖片的完整編碼流程：
     取 EXIF/ICC → EXIF 轉正 → 縮放 → 色彩模式標準化 → (目標大小逼近 / 自動縮小) → 編碼
     回傳 (bytes, 提醒訊息或 None, 實際使用的 quality 或 None)
     """
-    exif_data = get_exif_data(img) if keep_exif else None
+    # 像素會依 EXIF 轉正，因此保留的 EXIF 須把 Orientation 重設為 1，否則看圖軟體會再轉一次
+    exif_data = prepare_exif_bytes(
+        get_exif_data(img), strip_gps=strip_gps, reset_orientation=True,
+    ) if keep_exif else None
     icc_profile = get_icc_profile(img)
 
     img = ImageOps.exif_transpose(img)
 
-    if 0.1 <= scale < 1.0:
-        new_width = max(1, int(img.width * scale))
-        new_height = max(1, int(img.height * scale))
-        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    new_size = compute_resize(img.width, img.height, scale, max_dim)
+    if new_size:
+        img = img.resize(new_size, Image.Resampling.LANCZOS)
 
     img = _normalize_image_mode(img, output_format)
 
@@ -359,13 +413,15 @@ def process_image_core(
     file_stat: os.stat_result | None = None,
     target_size_bytes: int | None = None,
     png_quantize: bool = False,
+    max_dim: int | None = None,
+    strip_gps: bool = False,
 ) -> FileResult:
     """
     圖片處理核心邏輯：
     1. 若原檔已符合 target_size 且為原地覆蓋 (無縮放/跨格式需求)，直接跳過避免多餘重編碼
     2. 開啟圖片並判斷是否為動畫
     3. 動畫：輸出格式支援 (WebP) 則逐格重新編碼；否則跳過並保留原檔
-    4. 靜態：EXIF 轉正 → 縮放 → 色彩空間轉換 → (目標大小逼近) → 編碼 (保留 ICC)
+    4. 靜態：EXIF 轉正 → 縮放 (--scale / --max-dim) → 色彩空間轉換 → (目標大小逼近) → 編碼 (保留 ICC)
     5. 儲存至緩衝區檢查大小
     6. 嚴格原子寫入硬碟並保留 mtime
     """
@@ -385,7 +441,8 @@ def process_image_core(
         # - 原地覆蓋且無縮放/轉檔需求時，直接保留原檔避免無謂損耗畫質
         # - 其他情況 (例如另存新檔或跨格式) 則免跑二分搜尋，直接以指定 quality 單次編碼
         effective_target_size = target_size_bytes
-        if target_size_bytes is not None and original_size <= target_size_bytes and scale >= 1.0 and not should_force:
+        if target_size_bytes is not None and original_size <= target_size_bytes and scale >= 1.0 \
+                and max_dim is None and not should_force:
             if target_path == filepath:
                 return FileResult(
                     'skipped',
@@ -407,16 +464,20 @@ def process_image_core(
                         warn=True,
                         target_path=str(target_path),
                     )
-                exif_data = get_exif_data(src) if keep_exif else None
+                exif_data = prepare_exif_bytes(
+                    get_exif_data(src), strip_gps=strip_gps,
+                ) if keep_exif else None
                 icc_profile = get_icc_profile(src)
-                data = _encode_animated_webp(src, quality, scale, lossless, exif_data, icc_profile)
+                data = _encode_animated_webp(
+                    src, quality, scale, lossless, exif_data, icc_profile, max_dim=max_dim,
+                )
                 quality_used = None if lossless else quality
             else:
                 src.load()
                 data, warn_note, quality_used = _encode_still_image(
                     src, output_format, quality, keep_exif, scale,
                     lossless, original_size, effective_target_size,
-                    png_quantize=png_quantize,
+                    png_quantize=png_quantize, max_dim=max_dim, strip_gps=strip_gps,
                 )
         finally:
             src.close()
