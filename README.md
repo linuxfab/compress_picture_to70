@@ -11,7 +11,7 @@
 - **預覽模式 (`--dry-run`) 獨立統計**：`ProcessingSummary` 新增 `dry_run` 計數，結算報表顯示獨立的「預覽 (將處理)」列，不再誤算進「跳過」。
 - **拖曳路徑自動去除引號**：`resolve_directory()` 自動清理互動模式或命令列參數中前後帶有的單/雙引號（如 Windows 終端機拖曳資料夾產生的 `"D:\Photos"`）。
 - **新增 `--report <檔案.csv>` 逐檔處理報表**：支援於執行結束後匯出 UTF-8 BOM CSV 報表（Windows Excel 直接開啟不亂碼），記錄 `filepath`、`target_path`、`status`、`original_size`、`new_size`、`saved_bytes`、`quality_used` 與 `message`。
-- **測試**：新增 `tests/test_ux_v89.py`（7 個案例），總計 **83 個測試全數通過**。
+- **測試**：新增 `tests/test_ux_v89.py`（7 個案例），總計 **81 個測試全數通過**。
 
 ## 歷史改進 (v8.8.0) — 畫質與色彩正確性修復
 - **完整保留 ICC 色彩描述檔 (`get_icc_profile`)**：在 JPEG、PNG、WebP（含動畫 WebP）與 AVIF 輸出時自動保留原圖 `icc_profile`（即使未啟用 `--keep-exif` 亦保留），解決 iPhone Display P3 等廣色域照片轉檔後色彩偏淡的問題。
@@ -24,7 +24,7 @@
   - 品質降至 40 仍超過目標大小時，自動漸進縮小尺寸（`×0.85`，最多 3 次）並以黃字提示；若仍超標亦清楚告警。
   - 原檔已小於等於目標大小時，原地模式直接跳過避免多餘重編碼損耗畫質；另存新檔時免跑二分搜尋，直接單次編碼。
 - **新增 `--png-quantize` 選項**：`compress_images.py` 支援使用 `FASTOCTREE` 將 PNG 減色為 256 色調色盤（保留 Alpha 透明通道），並可搭配 `--target-size` 動態嘗試 `256 -> 128 -> 64 -> 32` 色逼近目標體積。
-- **測試**：新增 `tests/test_quality_color_v88.py`（10 個案例），總計 **76 個測試全數通過**。
+- **測試**：新增 `tests/test_quality_color_v88.py`（10 個案例），總計 **74 個測試全數通過**。
 
 ## 歷史改進 (v8.7.0) — 程式碼品質與架構重構
 - **單一職責模組拆分**：將原本超過 800 行的 `utils.py` 拆分為三個獨立模組：
@@ -35,14 +35,14 @@
 - **嚴格原子寫入保護 (`_atomic_write`)**：將重複的函式內 `import stat` 移至頂層並抽出 `_atomic_write()`；當 `os.replace()` 失敗時僅清理暫存檔並向上拋出錯誤，移除會破壞原子性的直寫 fallback，確保原檔在任何異常下皆不被損毀。
 - **新增 `--format` 參數 (啟用 AVIF 輸出)**：`compress_images.py` 新增 `-f / --format {auto,jpeg,png,webp,avif}`，`images_to_webp.py` 新增 `-f / --format {webp,avif}`，使內建的 `AVIF` 編碼能力正式開放給 CLI 使用。
 - **`pyproject.toml` 打包與腳本清理**：改用 `only-include` 精準打包核心模組（排除 `tests/` 與 `scratch/`），並移除重複的 `compress_images` script 定義。
-- **測試覆蓋率擴充**：新增 `tests/test_architecture_v87.py`（13 個案例），涵蓋 `run_pipeline()`、`main()` CLI 參數解析、嚴格原子寫入保護、`--format avif` 轉檔與 `pyproject.toml` 設定驗證，總計 **66 個測試全數通過**。
+- **測試覆蓋率擴充**：新增 `tests/test_architecture_v87.py`（13 個案例），涵蓋 `run_pipeline()`、`main()` CLI 參數解析、嚴格原子寫入保護、`--format avif` 轉檔與 `pyproject.toml` 設定驗證，總計 **64 個測試全數通過**。
 
 ## 歷史改進 (v8.6.0) — 資料安全修復
 - **同名不同副檔名衝突保護**：`a.jpg` 與 `a.png` 轉 WebP 時原本都會輸出成 `a.webp` 互相覆蓋（原地模式下兩個原檔還會被刪除）。現在由主程序在送進多程序管線前呼叫 `assign_conflict_tags()` 一次性偵測衝突（不分大小寫），衝突檔案改為 `a_jpg.webp`、`a_png.webp`，並在開始前列出改名清單；同時徹底消除多程序同時寫入同一檔案的競態。
 - **原地模式不再覆蓋其他既有檔案**：`--in-place` 只允許「覆寫自己」。若 `IMG.heic → IMG.jpg` 或 `a.jpg → a.webp` 的目標已是另一個既有檔案，未加 `-o` 時會跳過、保留原檔並以黃字提醒。壓縮工具中同目錄的 `IMG.heic` + `IMG.jpg` 則由衝突偵測自動改為 `IMG_heic.jpg`。
 - **動畫圖片保護**：偵測多影格來源（動畫 WebP / APNG / 動畫 AVIF）。輸出為 WebP 時逐格重新編碼並保留每格 duration 與 loop（支援 `--scale`）；輸出為 JPEG 等不支援動畫的格式時跳過並保留原檔，不再悄悄只剩第一格。動畫不套用 `--target-size`。
 - **壓縮工具排除自己的輸出目錄**：`-O` 指定的目錄位於來源內時，透過 `make_output_dir_excluder()` 在遍歷階段剪除，重複執行不再產生 `out/out/...`。WebP 工具共用同一實作，並修正舊版以目錄名稱排除時會誤排除任意深度同名資料夾的問題。
-- **測試**：新增 `tests/test_safety_v86.py`（23 個案例），總計 **53 個測試全數通過**。
+- **測試**：新增 `tests/test_safety_v86.py`（21 個案例），總計 **51 個測試全數通過**。
 
 ## 歷史改進 (v8.5.1)
 - **修復自動輸出格式推斷與色彩模式轉換順序**：在 `process_image_core` 中先推斷 `output_format` 再執行色彩模式標準化，修復 `output_format=None` 時 `RGBA` 轉 `.jpg` 漏轉 `RGB` 的問題。
@@ -178,7 +178,7 @@ uv run images-to-webp <目錄路徑> [選項]
 - `utils.py`: 共用模組相容匯出層 (v8.9.0)
 - `compress_images.py`: 圖片壓縮 CLI
 - `images_to_webp.py`: WebP / AVIF 轉檔 CLI
-- `tests/`: 單元測試 (83 個測試案例；涵蓋工具函式、影像邏輯、資料安全、架構、畫質與 UX 測試)
+- `tests/`: 單元測試 (81 個測試案例；涵蓋工具函式、影像邏輯、資料安全、架構、畫質與 UX 測試)
 - `pyproject.toml`: 專案設定與依賴管理 (uv)
 
 ## 架構設計
