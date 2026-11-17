@@ -1,5 +1,17 @@
 # Agent Logs
 
+- 2026-11-17 21:01
+  - 重點: 更新專案 Markdown 文件 (`README.md` 與 `agent-logs.md`)，同步近期 CI 設定、原子寫入權限修復與測試計數修正紀錄
+  - 影響:
+    - 補齊先前未記錄之變更摘要：
+      - `.github/workflows/tests.yml` (`26e0f6f`): 新增 GitHub Actions workflow，透過 `uv` 自動執行 `pytest`。
+      - `image_core.py` (`65d08af`): 修正 `_atomic_write()` 解除唯讀時僅疊加寫入位元，避免 `os.replace()` 失敗後原檔變成不可讀 (`0o200`)。
+      - `tests/__pycache__` (`b4132cb`): 停止追蹤編譯位元碼檔案。
+      - `README.md` (`46de554`): 修正各版本測試計數為 81 個案例。
+    - `README.md`: 於「專案結構」補入 `.github/workflows/tests.yml`，並更新開題與頁尾之最後更新時間為 `2026-11-17 21:01`。
+  - 結果: 文件與目前主分支 (`master`) 程式碼及 CI 設定完全同步，執行 `uv run pytest` 81 個單元測試全數通過。
+  - 更新者: Antigravity Agent
+
 - 2026-11-12 19:41
   - 重點: 專案收尾同步 (`uv.lock` 升至 8.9.0、`README.md` 參數補齊、清理 `scratch/` 早期除錯腳本)
   - 影響:
